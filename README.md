@@ -93,8 +93,9 @@ edit and export rooms; scanning stays on the iPhone. Mac rooms live in `~/Docume
 and PDF and file exports save straight into **Downloads** (never overwriting: a repeat gets " 2").
 
 To sync: on the Mac, Settings → **Pair your iPhone** shows a 6-digit code; on the iPhone, Settings →
-choose the Mac and enter the code. After that, rooms sync automatically whenever Mensur is open on both
-devices on the same Wi-Fi. If the same room changed on both, the newest save wins and the other is kept as a
+choose the Mac (or **Pair another Mac** when it already syncs with one) and enter the code. After that, rooms
+sync automatically whenever Mensur is open on both devices on the same Wi-Fi. The iPhone can be paired with
+several Macs and syncs with each one it finds, so an edit made on one Mac reaches the others through the iPhone. If the same room changed on both, the newest save wins and the other is kept as a
 "(conflicted copy)" room. A room deleted on one device moves to `Recently Deleted` in the other device's
 Mensur folder. Original RoomPlan files are copied but never replaced. Unpair from Settings at any time.
 

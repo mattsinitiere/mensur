@@ -36,7 +36,7 @@ struct MacRootView: View {
                     }
                     .buttonStyle(.plain).keyboardShortcut(",", modifiers: .command)
                     Button { navigation.macItem = .settings } label: {
-                        Label(sync.peer == nil ? "iPhone not paired" : sync.status, systemImage: sync.connected ? "checkmark.circle.fill" : "iphone.gen3")
+                        Label(sync.peers.isEmpty ? "iPhone not paired" : sync.status, systemImage: sync.connected ? "checkmark.circle.fill" : "iphone.gen3")
                             .font(.caption).foregroundStyle(sync.connected ? Color.green : Color.secondary).lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }

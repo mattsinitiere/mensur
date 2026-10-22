@@ -39,6 +39,11 @@ These are required acceptance checks, **not tests already performed**. Record de
   appears on the other within seconds; edit the same room on both while apart, then reconnect and confirm a
   "(conflicted copy)" appears; delete a room on one and confirm it moves to Recently Deleted on the other;
   unpair and confirm sync stops.
+- Several Macs: pair the iPhone with two Macs (the second through **Pair another Mac**); edit a room on each Mac
+  and confirm the edit reaches the other Mac after the iPhone syncs with both; delete a room on one Mac and
+  confirm it moves to Recently Deleted on the iPhone and the other Mac and doesn't come back; unpair one Mac and
+  confirm the other still syncs. Update a build paired with one Mac and confirm it stays paired without
+  conflicted copies.
 - Mac exports: PDF sheet and All files save to Downloads; a second export doesn't overwrite.
 - Automatic address: scan a room with location allowed, confirm the address fills in shortly after saving
   and can be edited; deny location and confirm the scan still saves without one.

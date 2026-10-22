@@ -7,7 +7,8 @@ source = root/'Mensur'
 pbx = (root/'Mensur.xcodeproj/project.pbxproj').read_text()
 for path in source.rglob('*.swift'):
     rel=str(path.relative_to(source))
-    assert f'path = "{rel}";' in pbx, f'Missing Xcode source: {rel}'
+    # Xcode quotes a path only when it needs quoting (spaces and the like).
+    assert f'path = "{rel}";' in pbx or f'path = {rel};' in pbx, f'Missing Xcode source: {rel}'
 for path in [source/'Info.plist',source/'PrivacyInfo.xcprivacy']:
     plistlib.loads(path.read_bytes())
 for path in (source/'Assets.xcassets').rglob('Contents.json'):
@@ -15,7 +16,8 @@ for path in (source/'Assets.xcassets').rglob('Contents.json'):
     for image in manifest.get('images',[]):
         assert (path.parent/image['filename']).is_file()
 ET.parse(root/'Mensur.xcodeproj/xcshareddata/xcschemes/Mensur.xcscheme')
-objects=re.findall(r'^\s*([A-F0-9]{24}) = \{',pbx,re.M)
+# Objects are defined at two tabs as `ID /* name */ = {`; deeper IDs (e.g. TargetAttributes keys) are references.
+objects=re.findall(r'^\t\t([A-F0-9]{24})(?: /\*.*?\*/)? = \{',pbx,re.M)
 assert len(objects)==len(set(objects)), 'Duplicate project object IDs'
 refs=re.findall(r'\b[A-F0-9]{24}\b',pbx)
 assert set(refs)<=set(objects), 'Dangling PBX reference'

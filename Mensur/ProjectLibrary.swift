@@ -34,7 +34,7 @@ struct ProjectLibrary: View {
                                 Text("Scans and edits sync to this Mac over Wi-Fi while Mensur is open on both.").font(.subheadline).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Button { navigation.showSettings() } label: { Label(sync.peer == nil ? "Pair your iPhone" : "Sync settings", systemImage: "arrow.triangle.2.circlepath") }
+                            Button { navigation.showSettings() } label: { Label(sync.peers.isEmpty ? "Pair your iPhone" : "Sync settings", systemImage: "arrow.triangle.2.circlepath") }
                                 .buttonStyle(.borderedProminent).controlSize(.large)
                         }
                         #else
@@ -43,7 +43,7 @@ struct ProjectLibrary: View {
                         HStack { Label("LiDAR capture", systemImage: "camera.metering.matrix"); Spacer(); Label("Saved on this device", systemImage: "lock") }
                             .font(.caption).foregroundStyle(.secondary)
                         #endif
-                        if sync.peer != nil {
+                        if !sync.peers.isEmpty {
                             Button { navigation.showSettings() } label: {
                                 Label(sync.status, systemImage: sync.connected ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath")
                                     .font(.caption).foregroundStyle(sync.connected ? Color.green : Color.secondary).lineLimit(2)
