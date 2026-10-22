@@ -1,0 +1,10 @@
+.DS_Store
+.build/
+.build-ios/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.build-device/
+.build-signed/
+build-logs/
+*.xcresult/
