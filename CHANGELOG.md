@@ -1,6 +1,9 @@
 # Changes
 
-## Unreleased
+## 0.1.0 alpha (build 3) — October 22, 2026
+
+The first tagged release (`v0.1.0-alpha`). Version numbers restart at 0.1.0 to mark Mensur as alpha; the
+1.0.x entries below were untagged development builds. The build number keeps counting up.
 
 - Install: `bash scripts/install.sh` pulls, builds and signs with the project's team, installs on this Mac
   and on any iPhone connected by cable or Wi-Fi, and prints when each signature expires. Rooms are kept.

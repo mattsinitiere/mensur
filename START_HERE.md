@@ -1,6 +1,6 @@
 # Mensur — build and test on your iPhone
 
-Source handoff: 1.0.1 (build 2), October 20, 2026.
+Version 0.1.0 alpha (build 3), October 22, 2026.
 
 This ZIP contains a native SwiftUI iOS app, not a website or an installable IPA.
 Claude Code can edit and build the source on your Mac; Xcode signs and installs

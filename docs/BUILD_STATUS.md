@@ -536,6 +536,16 @@ Round 13 — Gaussian splat feasibility (same day):
 - Not checked: the pull itself, an iPhone on Wi-Fi only, a phone that is locked, untrusted or has Developer
   Mode off (those print instructions and skip it), and a Mac where Xcode isn't signed in.
 
+## Round 29 — 0.1.0 alpha release (October 22, 2026)
+
+- Version set to 0.1.0, build 3 (Info.plist), from 1.0.1 (2): numbering restarts to mark the app as alpha,
+  and the build number still counts up. CHANGELOG's Unreleased section became 0.1.0 alpha; README and
+  START_HERE carry the new version. Tagged `v0.1.0-alpha` and published as a GitHub pre-release with source
+  only, because iPhone builds must be signed by each user's own Apple account.
+- `swift test`: 103 tests, 0 failures. `bash scripts/install.sh --no-pull`
+  (`build-logs/20261022-144740-install/`): the Mac app and Matthew's Phone both report 0.1.0 (3), signed
+  KM25U2VHNT, with the phone's copy signed until 2026-10-29.
+
 ## Handoff to a second Mac (October 20, 2026)
 
 - docs/NEW_MAC_SETUP.md: setting up another Mac from Xcode onwards. a handoff zip

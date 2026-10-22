@@ -1,6 +1,6 @@
 # Mensur
 
-**Updated source package: 1.0.1 (build 2), October 20, 2026.** Start with
+**0.1.0 alpha (build 3), October 22, 2026.** Start with
 [START_HERE.md](START_HERE.md) for the Claude Code → Xcode → iPhone walkthrough.
 [CHANGELOG.md](CHANGELOG.md) lists this handoff's changes.
 
