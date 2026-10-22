@@ -67,6 +67,17 @@ Expect `Executed 72 tests, with 0 failures` (or more) and `PASS: core tests and 
 
 ## 4. Run on your iPhone
 
+The quick way: plug in and unlock the iPhone, then run the install script. It pulls, builds and signs with
+your team, and installs on this Mac and the phone (so it covers step 5 too):
+
+```bash
+bash scripts/install.sh
+```
+
+Run it again whenever you want the latest build, and at least once a week: with the free Personal Team the
+iPhone copy stops opening after 7 days. The first run on a new Mac or phone can take a few minutes longer.
+If it reports a problem, these steps do the same in Xcode:
+
 1. Plug the iPhone into the Mac. Unlock it and tap **Trust** when it asks about this computer.
 2. In Xcode's toolbar, choose the **Mensur** scheme and your iPhone as the destination. The first time,
    Xcode spends a few minutes preparing the phone.
@@ -78,6 +89,8 @@ Developer Mode is already on. If the phone asks again, turn it on under Settings
 Developer Mode.
 
 ## 5. Run the Mac app
+
+`bash scripts/install.sh` already did this. In Xcode instead:
 
 1. In Xcode's destination menu, choose **My Mac (Mac Catalyst)**, then Run.
 2. To keep it like an installed app, drag the built app into Applications. Find it with Product → Show Build
@@ -154,4 +167,5 @@ See the latest rounds at the bottom of `docs/BUILD_STATUS.md`. In short:
 | `git pull` reports a conflict | Ask Claude to resolve it, or keep the newer version of each file. |
 | iPhone "unavailable" or "not paired" in Xcode | Unlock it, replug, tap Trust. Window → Devices and Simulators shows its state. |
 | App closes with "Untrusted Developer" | Step 4.4. |
+| iPhone app stops opening after a week | The free signature expired. Plug in the phone and run `bash scripts/install.sh`. |
 | Mac and iPhone don't find each other | Same Wi-Fi, both apps open, Local Network allowed on both (step 6.3). |

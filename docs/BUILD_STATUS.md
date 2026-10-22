@@ -519,6 +519,23 @@ Round 13 — Gaussian splat feasibility (same day):
   scanning, ceiling detection on real points, tracking report, next room or floor, resume from a world map),
   AirDrop between two devices, IFC opened in Revit, and DAE opened in SketchUp. See docs/DEVICE_TESTS.md.
 
+## Round 28 — one-step install script (October 22, 2026)
+
+- Fixed the Xcode warning "Conditional cast from 'any CapturedRoomAttribute' to 'any RawRepresentable' always
+  succeeds" in `RoomAdapter.objectLabel`: RoomPlan attributes are String-backed, so the raw value is read
+  directly. The unsigned iPhone build then had no warnings; 103 tests, 0 failures. Pushed as 338dd31.
+- New `scripts/install.sh`: pulls (fast-forward only; skipped when there are uncommitted changes), builds and
+  signs the Mac Catalyst app with automatic signing (team KM25U2VHNT), quits the installed copy, replaces
+  /Applications/Mensur.app and reopens it if it was open. Then, for each physical iPhone `devicectl` can reach,
+  it builds for that device (`-allowProvisioningDeviceRegistration`), installs with `devicectl device install
+  app` and prints the profile's expiry. Logs go to `build-logs/<time>-install/`.
+- `bash scripts/install.sh` (`build-logs/20261022-144042-install/`): it skipped the pull because of the
+  uncommitted docs, then installed both copies in 25 seconds. The Mac app is signed KM25U2VHNT and reopened
+  with the new binary. Matthew's Phone (iPhone 16 Pro Max, wired) has Mensur 1.0.1 (2), signed until
+  2026-10-29.
+- Not checked: the pull itself, an iPhone on Wi-Fi only, a phone that is locked, untrusted or has Developer
+  Mode off (those print instructions and skip it), and a Mac where Xcode isn't signed in.
+
 ## Handoff to a second Mac (October 20, 2026)
 
 - docs/NEW_MAC_SETUP.md: setting up another Mac from Xcode onwards. a handoff zip

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Install: `bash scripts/install.sh` pulls, builds and signs with the project's team, installs on this Mac
+  and on any iPhone connected by cable or Wi-Fi, and prints when each signature expires. Rooms are kept.
+  `--no-pull`, `--mac-only` and `--iphone-only` narrow it.
 - Scanning: Finish → Next room or Next floor carries on in the same AR session, so rooms and floors line up
   exactly; rooms can be continued later from their saved world map (Room options → Continue scanning). The
   live mini-plan is a heat-map of half-metre strips (red not yet seen up close, yellow glimpsed, green done;

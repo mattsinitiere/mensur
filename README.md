@@ -124,6 +124,19 @@ This runs the pure Swift geometry/export tests, then builds both the iOS Simulat
 swift test
 ```
 
+## Install on your Mac and iPhone
+
+Once Xcode is signed in to your Apple Account (see START_HERE.md), plug in and unlock the iPhone, then run:
+
+```bash
+bash scripts/install.sh
+```
+
+It pulls the latest commit, builds and signs with the project's team, replaces /Applications/Mensur.app and
+installs on every connected iPhone. Saved rooms are kept. With a free Personal Team the iPhone copy stops
+opening after 7 days, so run it again to renew it. `--no-pull`, `--mac-only` and `--iphone-only` narrow it,
+and logs go to `build-logs/`.
+
 Core tests belong to the Swift package; the app's Xcode scheme does not embed an XCTest target. To inspect these tests in Xcode, open `Package.swift` separately.
 
 After a successful build, follow [the device acceptance checklist](docs/DEVICE_TESTS.md), especially the reflection cases and export consistency checks. The simulator cannot validate RoomPlan capture or LiDAR accuracy.
