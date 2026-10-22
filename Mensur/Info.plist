@@ -28,19 +28,17 @@
 	<array>
 		<string>_mensur._tcp</string>
 	</array>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Mensur fills in the street address of rooms you scan. Only the coordinates are sent to Apple to look up the address; you can change or turn this off in Settings.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Mensur syncs rooms directly with your paired Mac or iPhone on the same Wi-Fi. Nothing is sent over the internet.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Mensur uses the camera and LiDAR to capture room geometry on this device.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Mensur syncs rooms directly with your paired Mac or iPhone on the same Wi-Fi. Nothing is sent over the internet.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Mensur fills in the street address of rooms you scan. Only the coordinates are sent to Apple to look up the address; you can change or turn this off in Settings.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 	</dict>
-	<key>UIUserInterfaceStyle</key>
-	<string>Light</string>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>UILaunchScreen</key>
@@ -58,5 +56,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
 </dict>
 </plist>

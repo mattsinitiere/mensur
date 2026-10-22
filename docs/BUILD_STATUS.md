@@ -457,8 +457,37 @@ Round 13 — Gaussian splat feasibility (same day):
   export showed Mensur and the dot mark in its title block.
 - This Mac's six rooms were copied to `~/Documents/Mensur` (the copies are identical; three splat image links
   now point inside the copy). Sync bookkeeping wasn't copied, so the iPhone pairs again from scratch.
-- Not checked: the Mac Catalyst build, a signed install on the iPhone, re-pairing and syncing rooms to the new
-  iPhone app, and the dark and tinted icons on screen (the simulator's home-screen icon style is Light).
+- Mac: `xcodebuild -project Mensur.xcodeproj -scheme Mensur -configuration Debug -destination 'platform=macOS,variant=Mac Catalyst' -derivedDataPath .build-signed -allowProvisioningUpdates build`
+  (`build-logs/20261022-132445-mac/`) BUILD SUCCEEDED, signed com.matthewsinitiere.Mensur / KM25U2VHNT,
+  installed as /Applications/Mensur.app and launched. Matthew installed the iPhone build himself.
+- Not checked: that the Mac app lists the six rooms (its window wasn't visible from here), re-pairing and
+  syncing rooms to the new iPhone app, and the dark and tinted icons on screen (the simulator's home-screen icon style is Light).
+
+## Round 25 — Mac sidebar Settings, Clear all rooms (October 22, 2026)
+
+- Mac sidebar: Settings moved out of the room list into the pinned area at the bottom, above the sync status,
+  so it stays visible with a long list. ⌘, also opens it.
+- Settings → Rooms → Clear all rooms (`ProjectStore.removeAll`): each room moves to Documents/Recently Deleted
+  and gets a deletion record, so a paired device moves its copies to its own Recently Deleted on the next sync.
+  With no rooms, the row reads "No rooms to clear".
+- `bash scripts/verify-on-mac.sh` (`build-logs/20261022-133048-27233/`): 72 tests, 0 failures; unsigned
+  Simulator and iPhone builds succeeded. Signed Mac Catalyst build (`build-logs/20261022-133055-mac/`)
+  succeeded and was installed as /Applications/Mensur.app.
+- Simulator (iPhone 18 Pro, iOS 27.0, sample room): the confirmation reads "Clear 1 room?" and points at the
+  button; confirming left 0 rooms, moved the room to Documents/Recently Deleted, and wrote deletions.json. The
+  room stayed cleared after a relaunch.
+- Not checked: the Mac sidebar on screen (this session can't capture the screen), and a clear propagating
+  to a paired device.
+
+## Round 26 — narrow-window stat cards, plan stretching (October 22, 2026)
+
+- Matthew's Mac screenshots: the six stat cards squeezed their labels in a narrower window, and the plan was
+  stretched sideways after a resize. The cards now use `ViewThatFits` (one row of six at least 120 pt wide,
+  otherwise two rows of three), and `PlanCanvas` and the capture screen's mini-plan use `contentMode = .redraw`.
+- `bash scripts/verify-on-mac.sh` (`build-logs/20261022-133344-28523/`): 72 tests, 0 failures; both unsigned
+  builds succeeded. Signed Mac Catalyst build (`build-logs/20261022-133356-mac/`) installed as
+  /Applications/Mensur.app.
+- Not checked on screen: this session can't capture the Mac display.
 
 ## Handoff to a second Mac (October 20, 2026)
 

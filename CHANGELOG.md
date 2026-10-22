@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Room view: the six measurement cards wrap into two rows of three when the window is narrow, instead of
+  squeezing labels like "AREA" to a letter per line. The floor plan redraws when the window is resized,
+  instead of stretching the previous drawing.
+- Mac: Settings and the sync status are pinned to the bottom of the sidebar, so they stay visible however long
+  the room list gets (⌘, opens Settings too).
+- Settings → Rooms → Clear all rooms (iPhone and Mac). Every room moves to the Recently Deleted folder in the
+  rooms folder instead of being erased, and the deletions sync, so a paired device moves its copies there too.
 - The app is now Mensur, with bundle ID com.matthewsinitiere.Mensur. It installs as a new app with its own
   storage: rooms live in Documents/Mensur on the Mac, and the iPhone needs pairing again (Settings → Pair).
   Rooms then sync across from the Mac. New app icon with light, dark and tinted variants: an isometric room

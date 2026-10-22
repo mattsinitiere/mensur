@@ -47,6 +47,8 @@ final class AppNavigation: ObservableObject {
 
 struct SettingsView: View {
     @EnvironmentObject private var store: ProjectStore
+    @EnvironmentObject private var sync: SyncService
+    @State private var confirmClear = false
     @AppStorage(Setting.units) private var units = DisplayUnits.imperial.rawValue
     @AppStorage(Setting.pdfPortrait) private var pdfPortrait = false
     @AppStorage(Setting.squareCorners) private var squareCorners = true
@@ -100,6 +102,23 @@ struct SettingsView: View {
                 } header: { Text("Appearance") } footer: {
                     Text("Black-and-white plans print clearly on any printer: windows and mirrors are double lines, doors and openings are dashed, and every opening keeps its tag on the PDF sheet.")
                 }
+                Section {
+                    if store.projects.isEmpty {
+                        Text("No rooms to clear").foregroundStyle(.secondary)
+                    } else {
+                        Button("Clear all rooms", systemImage: "trash", role: .destructive) { confirmClear = true }
+                            .foregroundStyle(.red)
+                            .confirmationDialog(store.projects.count == 1 ? "Clear 1 room?" : "Clear all \(store.projects.count) rooms?", isPresented: $confirmClear, titleVisibility: .visible) {
+                                Button("Clear all rooms", role: .destructive) {
+                                    do { try store.removeAll() } catch { store.errorMessage = error.localizedDescription }
+                                }
+                            } message: {
+                                Text("They move to Recently Deleted. \(clearedOnPeer)")
+                            }
+                    }
+                } header: { Text("Rooms") } footer: {
+                    Text("Every room moves to the Recently Deleted folder in the rooms folder, where you can restore it or delete it for good. \(clearedOnPeer)")
+                }
                 Section("About") {
                     LabeledContent("Version", value: "\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
                     LabeledContent("Rooms", value: "\(store.projects.count)")
@@ -118,5 +137,9 @@ struct SettingsView: View {
             #endif
             .navigationTitle("Settings")
         }
+    }
+    private var clearedOnPeer: String {
+        guard sync.peer != nil else { return "" }
+        return "Your paired \(sync.role == .host ? "iPhone" : "Mac") clears its rooms the same way when it next syncs."
     }
 }

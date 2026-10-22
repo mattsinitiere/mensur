@@ -313,6 +313,15 @@ struct RoomTransfer: Codable {
         try FileManager.default.removeItem(at: directory(room.id)); projects.removeAll { $0.id == room.id }
         tombstones[room.id] = Date(); persistTombstones(); localRevision += 1
     }
+    // Settings → Clear all rooms. Each room moves to Documents/Recently Deleted rather than being erased, and its
+    // deletion syncs, so a paired device moves its copies there too.
+    func removeAll() throws {
+        defer { persistTombstones(); localRevision += 1 }
+        for room in projects {
+            try moveToRecentlyDeleted(room.id)
+            tombstones[room.id] = Date()
+        }
+    }
     private func persistTombstones() {
         try? FileManager.default.createDirectory(at: AppPaths.support, withIntermediateDirectories: true)
         try? Self.encoder().encode(tombstones).write(to: tombstoneFile, options: .atomic)

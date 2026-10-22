@@ -20,17 +20,31 @@ struct MacRootView: View {
                             .contextMenu { Button("Delete room", role: .destructive) { deleting = room } }
                     }
                 }
-                Section { Label("Settings", systemImage: "gearshape").tag(AppNavigation.MacItem.settings) }
             }
             .searchable(text: $query, placement: .sidebar, prompt: "Find a room or address")
             .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
+            // Settings and sync status stay pinned below the list, however many rooms there are.
             .safeAreaInset(edge: .bottom) {
-                Button { navigation.macItem = .settings } label: {
-                    Label(sync.peer == nil ? "iPhone not paired" : sync.status, systemImage: sync.connected ? "checkmark.circle.fill" : "iphone.gen3")
-                        .font(.caption).foregroundStyle(sync.connected ? Color.green : Color.secondary).lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 4) {
+                    Button { navigation.macItem = .settings } label: {
+                        Label("Settings", systemImage: "gearshape")
+                            .foregroundStyle(navigation.macItem == .settings ? Color.white : Color.primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 8).padding(.vertical, 5)
+                            .background(navigation.macItem == .settings ? Color.accentColor : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).keyboardShortcut(",", modifiers: .command)
+                    Button { navigation.macItem = .settings } label: {
+                        Label(sync.peer == nil ? "iPhone not paired" : sync.status, systemImage: sync.connected ? "checkmark.circle.fill" : "iphone.gen3")
+                            .font(.caption).foregroundStyle(sync.connected ? Color.green : Color.secondary).lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain).padding(.horizontal, 8)
                 }
-                .buttonStyle(.plain).padding(.horizontal, 16).padding(.vertical, 10)
+                .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 10)
+                .background(.bar)
+                .overlay(alignment: .top) { Divider() }
             }
         } detail: {
             switch navigation.macItem {

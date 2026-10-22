@@ -89,16 +89,25 @@ struct RoomDetail: View {
             Label(address, systemImage: "mappin.and.ellipse").font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal)
         }
-        HStack(spacing: 8) {
+        let measures = Group {
             stat("Area", summary.totalArea.map { room.units.areaLabel($0) } ?? "Needs review")
             stat("Perimeter", summary.perimeter.map { room.units.length($0) } ?? "—")
             stat("Ceiling", summary.ceilingHeight.map { room.units.length($0) } ?? "—")
-            if wide {
+        }
+        if wide {
+            let counts = Group {
                 stat("Walls", "\(room.walls.count)")
                 stat("Doors", "\(room.activeSurfaces.filter { $0.kind == .door }.count)")
                 stat("Windows", "\(room.activeSurfaces.filter { $0.kind == .window }.count)")
             }
-        }.padding(.horizontal)
+            // All six cards in a row when they fit, otherwise two rows of three, instead of squeezing their labels.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { measures.frame(minWidth: 120); counts.frame(minWidth: 120) }
+                VStack(spacing: 8) { HStack(spacing: 8) { measures }; HStack(spacing: 8) { counts } }
+            }.padding(.horizontal)
+        } else {
+            HStack(spacing: 8) { measures }.padding(.horizontal)
+        }
     }
     private var canvas: some View {
                 ZStack(alignment: .bottom) {
@@ -184,7 +193,7 @@ struct RoomDetail: View {
     }
     private func stat(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title.uppercased()).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+            Text(title.uppercased()).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).lineLimit(1)
             Text(value).font(.subheadline.weight(.semibold).monospacedDigit()).lineLimit(1).minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 9)

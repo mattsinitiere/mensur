@@ -398,7 +398,7 @@ final class MiniPlanView: UIView {
     var coverage: [UUID: Double] = [:]          // per wall, 0…1 of its length scanned up close
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = UIColor.white.withAlphaComponent(0.88); isOpaque = false
+        backgroundColor = UIColor.white.withAlphaComponent(0.88); isOpaque = false; contentMode = .redraw
         layer.cornerRadius = 16; clipsToBounds = true; isUserInteractionEnabled = false
         accessibilityLabel = "Live floor plan of the walls found so far"
     }

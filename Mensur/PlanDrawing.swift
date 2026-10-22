@@ -242,6 +242,7 @@ final class PlanCanvas: UIView {
     var pan = CGSize.zero
     override init(frame: CGRect) {
         super.init(frame: frame); backgroundColor = .white; isOpaque = true
+        contentMode = .redraw      // refit on resize; the default stretches the last drawing (a Mac window resize)
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap(_:))))
         addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinch(_:))))
         addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(panPlan(_:))))
