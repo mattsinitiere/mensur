@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- Scanning: Finish → Next room or Next floor carries on in the same AR session, so rooms and floors line up
+  exactly; rooms can be continued later from their saved world map (Room options → Continue scanning). The
+  live mini-plan is a heat-map of half-metre strips (red not yet seen up close, yellow glimpsed, green done;
+  tap to enlarge), with spoken coaching toward the nearest unseen wall and haptics. Reveal mode measures the
+  depth of door and window frames from the LiDAR, which sets wall thickness. Mark outlets, switches, lights,
+  fixtures and vents where the camera points, and take reference photos, during the scan. Ceiling points
+  are kept and analysed for soffits, beams, slopes and vaults. A scan report gives path length, limited
+  tracking, relocalizations, ARKit's position corrections and how far RoomPlan left corners open.
+- Plan: walls drawn at their real thickness, hatched by type (stud, block, brick, concrete, glass,
+  partition); door swings, double, sliding, pocket and bifold doors; dimension strings (each wall, chained,
+  running, overall); markers, photo pins, stairs and ceiling features, all selectable and draggable; space
+  names with floor, wall, ceiling and base finishes; a furniture library at standard sizes.
+- Quantities: floor, ceiling (including soffit, beam, slope and vault surfaces), volume, wall area gross and
+  net of openings, baseboard. Health check: gaps, loose wall ends, odd angles, overlaps, crossings, slivers.
+- Buildings: rooms carry a building and floor; Building view shows each floor over a ghost of the one below,
+  lines floors up by their stairs, stacks them in 3D, and exports PDF (a sheet per floor), IFC with storeys
+  and SketchUp DAE. Rooms carry client, project, job number and tags; the library groups by project or
+  building and search covers all of them.
+- Exports: PDF set (sheet, room schedule and quantities, door/window/wall/marker/ceiling/stair schedules,
+  wall elevations, reference photos, record), layered DXF (walls, hatch, door swings, dimensions, spaces,
+  markers, stairs, ceiling, furniture), SVG at 1:50, 300 dpi PNG, IFC4 for Revit and ArchiCAD, COLLADA for
+  SketchUp; OBJ walls use the plan's thickness. Your company name, contact and logo replace the Mensur mark
+  in title blocks (Settings → Title block). DWG is not written (it needs a licensed library); DXF opens in
+  AutoCAD.
+- Sharing: Export → Send room to another device makes a .mensur file (project, scans, measurements,
+  photos) for AirDrop, Messages or Files; opening one adds the room. Photos sync with paired devices.
+- Welcome pages on first launch and a 30-second guided tour of a sample office (Settings → Help).
+
 - Room view: the six measurement cards wrap into two rows of three when the window is narrow, instead of
   squeezing labels like "AREA" to a letter per line. The floor plan redraws when the window is resized,
   instead of stretching the previous drawing.

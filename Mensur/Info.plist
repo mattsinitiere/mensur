@@ -6,6 +6,21 @@
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
 	<string>Mensur</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Mensur room</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.matthewsinitiere.mensur.room</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -29,7 +44,7 @@
 		<string>_mensur._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Mensur uses the camera and LiDAR to capture room geometry on this device.</string>
+	<string>Mensur uses the camera and LiDAR to capture room geometry, and to take reference photos you pin to the plan.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Mensur syncs rooms directly with your paired Mac or iPhone on the same Wi-Fi. Nothing is sent over the internet.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
@@ -58,5 +73,25 @@
 	</array>
 	<key>UIUserInterfaceStyle</key>
 	<string>Light</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Mensur room</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.matthewsinitiere.mensur.room</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mensur</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

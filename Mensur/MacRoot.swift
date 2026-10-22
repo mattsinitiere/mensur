@@ -7,13 +7,19 @@ struct MacRootView: View {
     @EnvironmentObject private var navigation: AppNavigation
     @State private var query = ""
     @State private var deleting: RoomProject?
-    private var filtered: [RoomProject] {
-        query.isEmpty ? store.projects : store.projects.filter { $0.name.localizedCaseInsensitiveContains(query) || ($0.address ?? "").localizedCaseInsensitiveContains(query) }
-    }
+    private var filtered: [RoomProject] { store.projects.filter { RoomQuery.matches($0, query) } }
     var body: some View {
         NavigationSplitView {
             List(selection: $navigation.macItem) {
                 Label("All rooms", systemImage: "square.grid.2x2").tag(AppNavigation.MacItem.overview)
+                let buildings = BuildingPlan.buildings(store.projects).filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+                if !buildings.isEmpty {
+                    Section("Buildings") {
+                        ForEach(buildings) { b in
+                            Label(b.name, systemImage: "building.2").tag(AppNavigation.MacItem.building(b.name))
+                        }
+                    }
+                }
                 Section("Rooms") {
                     ForEach(filtered) { room in
                         RoomRow(room: room).tag(AppNavigation.MacItem.room(room.id))
@@ -21,7 +27,7 @@ struct MacRootView: View {
                     }
                 }
             }
-            .searchable(text: $query, placement: .sidebar, prompt: "Find a room or address")
+            .searchable(text: $query, placement: .sidebar, prompt: "Find a room, address, client or tag")
             .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
             // Settings and sync status stay pinned below the list, however many rooms there are.
             .safeAreaInset(edge: .bottom) {
@@ -55,14 +61,17 @@ struct MacRootView: View {
                     ContentUnavailableView("Room not available", systemImage: "square.dashed", description: Text("It may have been deleted on your iPhone."))
                 }
             case .settings: SettingsView()
-            default: ProjectLibrary(onOpen: { navigation.macItem = .room($0) })
+            case .building(let name): NavigationStack { BuildingView(name: name, onOpen: { navigation.macItem = .room($0) }) }.id(name)
+            default: ProjectLibrary(onOpen: { navigation.macItem = .room($0) }, onOpenBuilding: { navigation.macItem = .building($0) })
             }
         }
         #if DEBUG
-        // Developer aid for layout snapshots: MENSUR_OPEN=settings, or the index of a room to open.
+        // Developer aid for layout snapshots: MENSUR_OPEN=settings, building:<name>, room:<name>, or a room's index.
         .onAppear {
             guard let open = ProcessInfo.processInfo.environment["MENSUR_OPEN"] else { return }
             if open == "settings" { navigation.macItem = .settings }
+            else if open.hasPrefix("building:") { navigation.macItem = .building(String(open.dropFirst(9))) }
+            else if open.hasPrefix("room:"), let room = store.projects.first(where: { $0.name == String(open.dropFirst(5)) }) { navigation.macItem = .room(room.id) }
             else if let i = Int(open), store.projects.indices.contains(i) { navigation.macItem = .room(store.projects[i].id) }
         }
         #endif

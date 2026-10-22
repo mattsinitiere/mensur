@@ -96,6 +96,12 @@ struct AutoCleanup: Codable, Hashable {
 struct SpaceLabel: Codable, Hashable {
     var name: String
     var anchor: PlanPoint
+    // Finish tags for the room schedule ("LVP", "Paint · eggshell", "ACT 2×2"). Optional: older projects decode.
+    var floorFinish: String? = nil
+    var wallFinish: String? = nil
+    var ceilingFinish: String? = nil
+    var baseFinish: String? = nil
+    var hasFinishes: Bool { [floorFinish, wallFinish, ceilingFinish, baseFinish].contains { !($0 ?? "").isEmpty } }
 }
 
 struct PlanSurface: Codable, Identifiable, Hashable {
@@ -124,6 +130,21 @@ struct PlanSurface: Codable, Identifiable, Hashable {
     var rails: [Double]? = nil
     // Walls: how well the LiDAR mesh confirms this wall where it now is (set after a scan, cleared by edits).
     var lidarCheck: LidarCheck? = nil
+    // Walls: construction type and overall thickness (meters, outward from the scanned inside face).
+    var wallType: WallType? = nil
+    var thickness: Double? = nil
+    var thicknessSource: ThicknessSource? = nil
+    // Doors: how the leaf moves. hingeAtB puts the hinge at the b end; opensOut swings it away from the room.
+    var doorStyle: DoorStyle? = nil
+    var hingeAtB: Bool? = nil
+    var opensOut: Bool? = nil
+    // Doors and windows: the measured depth of the opening's reveal (jamb), which is the wall's thickness there.
+    var revealDepth: Double? = nil
+    // The thickness the plan draws: typed or measured, else the type's default; nil draws a single line.
+    var drawnThickness: Double? {
+        guard kind == .wall else { return nil }
+        return thickness ?? wallType?.defaultThickness
+    }
     var paneDescription: String? {
         guard kind == .window, (dividers?.isEmpty == false) || (rails?.isEmpty == false) else { return nil }
         return "\((dividers?.count ?? 0) + 1) × \((rails?.count ?? 0) + 1) panes"
@@ -164,6 +185,13 @@ struct RoomProject: Codable, Identifiable {
     // Optional so earlier projects decode unchanged; schemaVersion stays 1.
     var address: String? = nil
     var spaceLabels: [SpaceLabel]? = nil
+    var job: JobInfo? = nil
+    var level: FloorLevel? = nil
+    var markers: [PlanMarker]? = nil
+    var photos: [PinnedPhoto]? = nil
+    var ceilings: [CeilingFeature]? = nil
+    var stairs: [Stair]? = nil
+    var scanReport: ScanReport? = nil
     var activeSurfaces: [PlanSurface] { surfaces.filter { !$0.excluded } }
     var walls: [PlanSurface] { activeSurfaces.filter { $0.kind == .wall } }
     var reviewCount: Int { activeSurfaces.filter(\.needsReview).count }
@@ -192,7 +220,9 @@ struct RoomProject: Codable, Identifiable {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.count <= 120,
               surfaces.count <= 1000, objects.count <= 1000 else { throw ProjectError.invalid("Invalid project size or title.") }
         guard (address?.count ?? 0) <= 300, (spaceLabels ?? []).allSatisfy({ $0.name.count <= 120 && $0.anchor.isFinite }),
+              (spaceLabels ?? []).allSatisfy({ l in [l.floorFinish, l.wallFinish, l.ceilingFinish, l.baseFinish].allSatisfy { ($0?.count ?? 0) <= 120 } }),
               (spaceLabels?.count ?? 0) <= 200 else { throw ProjectError.invalid("Invalid address or space names.") }
+        try validateAnnotations()
         guard Set(surfaces.map(\.id)).count == surfaces.count,
               Set(objects.map(\.id)).count == objects.count else { throw ProjectError.invalid("Duplicate element identifiers.") }
         let wallIDs = Set(surfaces.filter { $0.kind == .wall }.map(\.id))
@@ -208,6 +238,9 @@ struct RoomProject: Codable, Identifiable {
                   (s.dividers ?? []).allSatisfy({ $0.isFinite && $0 > 0 && $0 < s.length }),
                   (s.rails ?? []).allSatisfy({ $0.isFinite && $0 > 0 && $0 < s.height }) else {
                 throw ProjectError.invalid("Invalid window panes for \(s.label).")
+            }
+            guard [s.thickness, s.revealDepth].allSatisfy({ $0.map { $0.isFinite && $0 > 0 && $0 <= 2 } ?? true }) else {
+                throw ProjectError.invalid("Invalid thickness for \(s.label).")
             }
             if let c = s.lengthCheck {
                 guard c.measuredMeters.isFinite, c.referenceMeters.isFinite,
@@ -228,15 +261,62 @@ struct RoomProject: Codable, Identifiable {
     // The user's name for each space in `spaces`, or "Space A", "Space B"… where none is set.
     func spaceNames(_ spaces: [Geometry.Space]) -> [String] {
         spaces.enumerated().map { i, space in
-            spaceLabels?.first { Geometry.contains(space.points, $0.anchor) }?.name ?? "Space \(i < 26 ? String(UnicodeScalar(65 + i)!) : "\(i + 1)")"
+            spaceLabel(space).flatMap { $0.name.isEmpty ? nil : $0.name } ?? "Space \(i < 26 ? String(UnicodeScalar(65 + i)!) : "\(i + 1)")"
         }
     }
-    // Names `space`, replacing any name pinned inside it; an empty name restores the default.
+    // The name and finishes pinned inside `space`, if any.
+    func spaceLabel(_ space: Geometry.Space) -> SpaceLabel? { spaceLabels?.first { Geometry.contains(space.points, $0.anchor) } }
+    // Names `space`, replacing any name pinned inside it; an empty name restores the default. Finishes stay.
     mutating func nameSpace(_ space: Geometry.Space, _ name: String) {
+        var label = spaceLabel(space) ?? SpaceLabel(name: "", anchor: Geometry.labelPoint(space.points))
+        label.name = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
+        setSpaceLabel(label, for: space)
+    }
+    // Replaces whatever is pinned inside `space`; a label with neither a name nor finishes is removed.
+    mutating func setSpaceLabel(_ label: SpaceLabel, for space: Geometry.Space) {
         var labels = (spaceLabels ?? []).filter { !Geometry.contains(space.points, $0.anchor) }
-        let trimmed = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
-        if !trimmed.isEmpty { labels.append(.init(name: trimmed, anchor: Geometry.labelPoint(space.points))) }
+        var pinned = label
+        pinned.anchor = Geometry.labelPoint(space.points)
+        for path in [\SpaceLabel.floorFinish, \.wallFinish, \.ceilingFinish, \.baseFinish] {
+            let text = (pinned[keyPath: path] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            pinned[keyPath: path] = text.isEmpty ? nil : String(text.prefix(120))
+        }
+        if !pinned.name.isEmpty || pinned.hasFinishes { labels.append(pinned) }
         spaceLabels = labels.isEmpty ? nil : labels
+    }
+
+    // Limits on everything beyond walls and openings, so an imported or synced project can't carry
+    // malformed or extreme values into drawing and exports.
+    func validateAnnotations() throws {
+        func ok(_ p: PlanPoint) -> Bool { p.isFinite && abs(p.x) < 1000 && abs(p.z) < 1000 }
+        func height(_ h: Double?) -> Bool { h.map { $0.isFinite && $0 >= -1 && $0 <= 30 } ?? true }
+        if let job {
+            guard job.client.count <= 120, job.project.count <= 120, job.number.count <= 60,
+                  job.tags.count <= 30, job.tags.allSatisfy({ $0.count <= 40 }) else { throw ProjectError.invalid("Invalid job details.") }
+        }
+        if let level {
+            guard !level.building.isEmpty, level.building.count <= 120, (level.name?.count ?? 0) <= 60, abs(level.floor) <= 200,
+                  level.elevation.map({ $0.isFinite && abs($0) <= 300 }) ?? true, ok(level.offset), level.rotation.isFinite else { throw ProjectError.invalid("Invalid building or floor.") }
+        }
+        guard (markers?.count ?? 0) <= 2000, (markers ?? []).allSatisfy({ ok($0.position) && height($0.height) && $0.label.count <= 120 && $0.note.count <= 2000 }) else {
+            throw ProjectError.invalid("Invalid markers.")
+        }
+        guard (photos?.count ?? 0) <= 500, (photos ?? []).allSatisfy({ ok($0.position) && $0.caption.count <= 500 && ($0.heading?.isFinite ?? true) }) else {
+            throw ProjectError.invalid("Invalid photo pins.")
+        }
+        guard (ceilings?.count ?? 0) <= 200, (ceilings ?? []).allSatisfy({ c in
+            ok(c.a) && ok(c.b) && c.length >= 0.05 && c.length <= 100 && c.width.isFinite && c.width > 0.02 && c.width <= 100
+                && height(c.low) && height(c.high) && c.label.count <= 120
+        }) else { throw ProjectError.invalid("Invalid ceiling features.") }
+        guard (stairs?.count ?? 0) <= 50, (stairs ?? []).allSatisfy({ s in
+            ok(s.a) && ok(s.b) && s.length >= 0.3 && s.length <= 30 && s.width.isFinite && s.width >= 0.3 && s.width <= 10
+                && (1...100).contains(s.risers) && s.label.count <= 120
+        }) else { throw ProjectError.invalid("Invalid stairs.") }
+        if let r = scanReport {
+            guard [r.pathLength, r.duration, r.limitedTracking, r.largestCorrection].allSatisfy({ $0.isFinite && $0 >= 0 }) else {
+                throw ProjectError.invalid("Invalid scan report.")
+            }
+        }
     }
 
     // Removes only what validated() would reject, so one malformed piece of a capture cannot block saving

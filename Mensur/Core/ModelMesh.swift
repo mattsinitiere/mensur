@@ -35,9 +35,17 @@ enum ModelMesh {
                      faces: [[0, 1, 2, 3], [4, 7, 6, 5], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]])
     }
 
-    static func parts(_ project: RoomProject, includeObjects: Bool = true) -> [MeshPart] {
+    // closedSolids keeps every face of each wall patch (IFC needs closed shells); otherwise faces between
+    // neighbouring patches are left out so translucent walls show no seams.
+    static func parts(_ project: RoomProject, includeObjects: Bool = true, closedSolids: Bool = false) -> [MeshPart] {
         var result: [MeshPart] = []
+        let outline = PlanGeometry.outlineWalls(project), boundary = Geometry.boundary(project.walls)
         for wall in project.walls {
+            // Thickness as drawn on the plan, grown outward from the inside face on outline walls and centred on
+            // partitions; walls without one are a 6 cm visualization slab centred on the scanned line.
+            let thickness = wall.drawnThickness ?? 0.06
+            let shift = wall.drawnThickness != nil && outline.contains(wall.id)
+                ? Geometry.inwardNormal(wall, walls: project.walls, boundary: boundary) * (-thickness / 2) : .zero
             let openings = project.activeSurfaces.filter {
                 $0.parentID == wall.id && $0.kind.isCutout && Geometry.openingIssue($0, in: project) == nil
             }
@@ -60,12 +68,12 @@ enum ModelMesh {
             for i in 0..<(xs.count - 1) {
                 for j in 0..<(ys.count - 1) where solid(i, j) {
                     var patch = box(name: "wall_\(wall.id.uuidString)_\(i)_\(j)", material: "wall",
-                                    a: wall.a + wall.direction * xs[i], b: wall.a + wall.direction * xs[i + 1],
-                                    bottom: ys[j], height: ys[j + 1] - ys[j], thickness: 0.06)
+                                    a: wall.a + shift + wall.direction * xs[i], b: wall.a + shift + wall.direction * xs[i + 1],
+                                    bottom: ys[j], height: ys[j + 1] - ys[j], thickness: thickness)
                     // Faces shared with the next patch are inside the wall; leaving them out keeps translucent
                     // walls free of seams. box() faces: bottom, top, front, end at b, back, end at a.
                     let inside = [solid(i, j - 1), solid(i, j + 1), false, solid(i + 1, j), false, solid(i - 1, j)]
-                    patch.faces = patch.faces.enumerated().filter { !inside[$0.offset] }.map(\.element)
+                    if !closedSolids { patch.faces = patch.faces.enumerated().filter { !inside[$0.offset] }.map(\.element) }
                     result.append(patch)
                 }
             }
@@ -103,7 +111,6 @@ enum ModelMesh {
                                   b: c + dir * (o.size.x / 2), bottom: o.center.y - o.size.y / 2, height: o.size.y, thickness: o.size.z))
             }
         }
-        let boundary = Geometry.boundary(project.walls)
         if boundary.area != nil {
             let floorY = project.walls.map(\.bottom).min() ?? 0
             result.append(.init(name: "approximate_floor", material: "floor",
@@ -144,7 +151,7 @@ enum ModelMesh {
 
     static func obj(_ project: RoomProject) -> String {
         var lines = ["# Mensur corrected model. Units: meters; Y up.",
-                     "# Wall thickness 0.06m is visualization only, not measured construction thickness.",
+                     "# Walls use the thickness set on the plan (typed, measured at a reveal, or the wall type's default); others are a 0.06m visualization slab.",
                      "mtllib Corrected-model.mtl"]
         var offset = 1
         for part in parts(project) {

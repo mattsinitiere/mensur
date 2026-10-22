@@ -489,6 +489,36 @@ Round 13 — Gaussian splat feasibility (same day):
   /Applications/Mensur.app.
 - Not checked on screen: this session can't capture the Mac display.
 
+## Round 27 — buildings, annotations, takeoffs, exports, scan tools (October 22, 2026)
+
+- Scope (from Matthew's list): floors and stairs in buildings; resuming scans; coverage heat-map; spoken and
+  haptic coaching; reveal mode; ceiling features (detected and drawn); markers and photo pins; tracking report;
+  wall types with thickness and hatching; door styles; dimension strings; space names and finishes with a
+  room schedule; a furniture library; ceiling area and volume; net wall area; DXF layers, SVG, PNG, IFC4,
+  COLLADA, the PDF set with elevations, branded title blocks; projects by client; search by address, client
+  or tag; .mensur packages for AirDrop; the welcome and tour; health checks. Not done: DWG, which needs a
+  licensed library (DXF covers AutoCAD).
+- New core files: Annotations, PlanGeometry, Takeoffs, HealthCheck, Elevations, CeilingAnalysis, ScanTools,
+  Building, Exporters. New app files: ScanExtras, ItemEditors, PDFSet, RoomPackage, BuildingView, Onboarding;
+  Capture.swift rewritten. All new project fields are optional (schemaVersion 1) and validated in
+  `RoomProject.validateAnnotations()`. Sync now carries photos and extra scan passes (`SyncPlan.isSyncedFile`).
+- `bash scripts/verify-on-mac.sh` (`build-logs/20261022-142852-49465/`): 103 tests (31 new), 0 failures; both
+  unsigned builds succeeded. Signed Mac Catalyst build (`build-logs/20261022-142928-mac/`) installed as
+  /Applications/Mensur.app; the real library still has its 6 rooms.
+- Simulator (iPhone 18 Pro, iOS 27.0): welcome pages, the 5-step tour over the sample office, Elements with
+  finishes and quantities (checked by hand: 27.0 m² floor, 71.6 m³ volume after the soffit and beam), the new
+  scan form. A debug export (`MENSUR_EXPORT`) wrote every format for both sample rooms: the 7-page plan set
+  (sheet, schedules, elevations, record), SVG and DAE well-formed XML, PNG, IFC and .mensur. Pages and images
+  were viewed.
+- Mac (test library via `MENSUR_TEST_DATA`, windows via `MENSUR_SNAPSHOTS`): sidebar with Buildings and Settings
+  pinned at the bottom, room view with inspector, Building view of a two-floor test building. Opening a .mensur
+  file in a test copy of the app added the room with its surfaces and markers.
+- Fixed during testing: finish tags overflowing narrow spaces; PDF dimension strings clipped at the sheet edge;
+  the Building view canvas drawing black with no text; the tour closing its room when it ended.
+- Not checked: everything inside a live scan (heat-map, coaching, reveal mode, markers and photos taken while
+  scanning, ceiling detection on real points, tracking report, next room or floor, resume from a world map),
+  AirDrop between two devices, IFC opened in Revit, and DAE opened in SketchUp. See docs/DEVICE_TESTS.md.
+
 ## Handoff to a second Mac (October 20, 2026)
 
 - docs/NEW_MAC_SETUP.md: setting up another Mac from Xcode onwards. a handoff zip

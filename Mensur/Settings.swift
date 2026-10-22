@@ -7,6 +7,9 @@ enum Setting {
     static let hideStubs = "autoHideStubs", dimensions = "planDimensions", furniture = "planFurniture"
     static let accent = "accentColor", monochrome = "planMonochrome", autoAddress = "autoAddress"
     static let invertScrollZoom = "invertScrollZoom"
+    static let dimensionStyle = "dimensionStyle", spokenCoaching = "spokenCoaching", hapticCoaching = "hapticCoaching"
+    static let companyName = "brandCompanyName", companyContact = "brandCompanyContact", onboardingSeen = "onboardingSeen"
+    static var dimensionLayout: PlanGeometry.DimensionStyle { UserDefaults.standard.string(forKey: dimensionStyle).flatMap(PlanGeometry.DimensionStyle.init(rawValue:)) ?? .walls }
     static var defaultUnits: DisplayUnits { UserDefaults.standard.string(forKey: units).flatMap(DisplayUnits.init(rawValue:)) ?? .imperial }
     static func bool(_ key: String, default value: Bool) -> Bool { UserDefaults.standard.object(forKey: key) as? Bool ?? value }
     static var monochromePlans: Bool { bool(monochrome, default: false) }
@@ -39,9 +42,11 @@ enum AccentChoice: String, CaseIterable, Identifiable {
 final class AppNavigation: ObservableObject {
     enum Tab: Hashable { case rooms, settings }
     // The Mac's sidebar selection.
-    enum MacItem: Hashable { case overview, room(UUID), settings }
+    enum MacItem: Hashable { case overview, room(UUID), building(String), settings }
     @Published var tab = Tab.rooms
     @Published var macItem: MacItem? = .overview
+    @Published var tour: UUID?                      // the sample room the welcome tour is showing
+    @Published var showWelcome = false
     func showSettings() { tab = .settings; macItem = .settings }
 }
 
@@ -59,6 +64,9 @@ struct SettingsView: View {
     @AppStorage(Setting.monochrome) private var monochrome = false
     @AppStorage(Setting.autoAddress) private var autoAddress = true
     @AppStorage(Setting.invertScrollZoom) private var invertScrollZoom = false
+    @AppStorage(Setting.spokenCoaching) private var spokenCoaching = true
+    @AppStorage(Setting.hapticCoaching) private var hapticCoaching = true
+    @EnvironmentObject private var navigation: AppNavigation
     var body: some View {
         NavigationStack {
             Form {
@@ -85,6 +93,12 @@ struct SettingsView: View {
                 }
                 #else
                 Section {
+                    Toggle("Spoken coaching", isOn: $spokenCoaching)
+                    Toggle("Haptic feedback", isOn: $hapticCoaching)
+                } header: { Text("While scanning") } footer: {
+                    Text("Spoken coaching names the wall that still needs a closer look; haptics tap when a wall is done, a reveal is measured, or a marker or photo is taken.")
+                }
+                Section {
                     Toggle("Square rounded corners", isOn: $squareCorners)
                     Toggle("Hide short wall stubs", isOn: $hideStubs)
                     Toggle("Fill in the address from my location", isOn: $autoAddress)
@@ -92,6 +106,7 @@ struct SettingsView: View {
                     Text("Corners and stubs can be undone per room in Review. The address can be changed any time in Room details; looking it up sends only your coordinates to Apple, and you’ll be asked for location access the first time.")
                 }
                 #endif
+                TitleBlockSettings()
                 Section {
                     Picker("Accent colour", selection: $accent) {
                         ForEach(AccentChoice.allCases) { choice in
@@ -118,6 +133,9 @@ struct SettingsView: View {
                     }
                 } header: { Text("Rooms") } footer: {
                     Text("Every room moves to the Recently Deleted folder in the rooms folder, where you can restore it or delete it for good. \(clearedOnPeer)")
+                }
+                Section("Help") {
+                    Button("Show the welcome and tour again", systemImage: "play.rectangle") { navigation.showWelcome = true }
                 }
                 Section("About") {
                     LabeledContent("Version", value: "\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
