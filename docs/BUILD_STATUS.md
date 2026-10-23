@@ -489,7 +489,64 @@ Round 13 — Gaussian splat feasibility (same day):
   /Applications/Mensur.app.
 - Not checked on screen: this session can't capture the Mac display.
 
-## Round 27 — iPhone syncs with several Macs (October 22, 2026)
+## Round 27 — buildings, annotations, takeoffs, exports, scan tools (October 22, 2026)
+
+- Scope (from Matthew's list): floors and stairs in buildings; resuming scans; coverage heat-map; spoken and
+  haptic coaching; reveal mode; ceiling features (detected and drawn); markers and photo pins; tracking report;
+  wall types with thickness and hatching; door styles; dimension strings; space names and finishes with a
+  room schedule; a furniture library; ceiling area and volume; net wall area; DXF layers, SVG, PNG, IFC4,
+  COLLADA, the PDF set with elevations, branded title blocks; projects by client; search by address, client
+  or tag; .mensur packages for AirDrop; the welcome and tour; health checks. Not done: DWG, which needs a
+  licensed library (DXF covers AutoCAD).
+- New core files: Annotations, PlanGeometry, Takeoffs, HealthCheck, Elevations, CeilingAnalysis, ScanTools,
+  Building, Exporters. New app files: ScanExtras, ItemEditors, PDFSet, RoomPackage, BuildingView, Onboarding;
+  Capture.swift rewritten. All new project fields are optional (schemaVersion 1) and validated in
+  `RoomProject.validateAnnotations()`. Sync now carries photos and extra scan passes (`SyncPlan.isSyncedFile`).
+- `bash scripts/verify-on-mac.sh` (`build-logs/20261022-142852-49465/`): 103 tests (31 new), 0 failures; both
+  unsigned builds succeeded. Signed Mac Catalyst build (`build-logs/20261022-142928-mac/`) installed as
+  /Applications/Mensur.app; the real library still has its 6 rooms.
+- Simulator (iPhone 18 Pro, iOS 27.0): welcome pages, the 5-step tour over the sample office, Elements with
+  finishes and quantities (checked by hand: 27.0 m² floor, 71.6 m³ volume after the soffit and beam), the new
+  scan form. A debug export (`MENSUR_EXPORT`) wrote every format for both sample rooms: the 7-page plan set
+  (sheet, schedules, elevations, record), SVG and DAE well-formed XML, PNG, IFC and .mensur. Pages and images
+  were viewed.
+- Mac (test library via `MENSUR_TEST_DATA`, windows via `MENSUR_SNAPSHOTS`): sidebar with Buildings and Settings
+  pinned at the bottom, room view with inspector, Building view of a two-floor test building. Opening a .mensur
+  file in a test copy of the app added the room with its surfaces and markers.
+- Fixed during testing: finish tags overflowing narrow spaces; PDF dimension strings clipped at the sheet edge;
+  the Building view canvas drawing black with no text; the tour closing its room when it ended.
+- Not checked: everything inside a live scan (heat-map, coaching, reveal mode, markers and photos taken while
+  scanning, ceiling detection on real points, tracking report, next room or floor, resume from a world map),
+  AirDrop between two devices, IFC opened in Revit, and DAE opened in SketchUp. See docs/DEVICE_TESTS.md.
+
+## Round 28 — one-step install script (October 22, 2026)
+
+- Fixed the Xcode warning "Conditional cast from 'any CapturedRoomAttribute' to 'any RawRepresentable' always
+  succeeds" in `RoomAdapter.objectLabel`: RoomPlan attributes are String-backed, so the raw value is read
+  directly. The unsigned iPhone build then had no warnings; 103 tests, 0 failures. Pushed as 338dd31.
+- New `scripts/install.sh`: pulls (fast-forward only; skipped when there are uncommitted changes), builds and
+  signs the Mac Catalyst app with automatic signing (team KM25U2VHNT), quits the installed copy, replaces
+  /Applications/Mensur.app and reopens it if it was open. Then, for each physical iPhone `devicectl` can reach,
+  it builds for that device (`-allowProvisioningDeviceRegistration`), installs with `devicectl device install
+  app` and prints the profile's expiry. Logs go to `build-logs/<time>-install/`.
+- `bash scripts/install.sh` (`build-logs/20261022-144042-install/`): it skipped the pull because of the
+  uncommitted docs, then installed both copies in 25 seconds. The Mac app is signed KM25U2VHNT and reopened
+  with the new binary. Matthew's Phone (iPhone 16 Pro Max, wired) has Mensur 1.0.1 (2), signed until
+  2026-10-29.
+- Not checked: the pull itself, an iPhone on Wi-Fi only, a phone that is locked, untrusted or has Developer
+  Mode off (those print instructions and skip it), and a Mac where Xcode isn't signed in.
+
+## Round 29 — 0.1.0 alpha release (October 22, 2026)
+
+- Version set to 0.1.0, build 3 (Info.plist), from 1.0.1 (2): numbering restarts to mark the app as alpha,
+  and the build number still counts up. CHANGELOG's Unreleased section became 0.1.0 alpha; README and
+  START_HERE carry the new version. Tagged `v0.1.0-alpha` and published as a GitHub pre-release with source
+  only, because iPhone builds must be signed by each user's own Apple account.
+- `swift test`: 103 tests, 0 failures. `bash scripts/install.sh --no-pull`
+  (`build-logs/20261022-144740-install/`): the Mac app and Matthew's Phone both report 0.1.0 (3), signed
+  KM25U2VHNT, with the phone's copy signed until 2026-10-29.
+
+## Round 30 — iPhone syncs with several Macs (October 22–23, 2026)
 
 - Matthew works from three Macs (two Mac Studios, an M1 MacBook Pro) and wants the iPhone to sync with all of
   them. The iPhone now keeps a list of paired Macs, one connection per Mac it finds, and runs one sync round at
@@ -523,6 +580,11 @@ Round 13 — Gaussian splat feasibility (same day):
 - Not run: any Xcode build (iOS Simulator, iPhone or Mac Catalyst), `bash scripts/verify-on-mac.sh`, the
   Simulator, or a device. Multi-Mac sync, the Settings screens and the migration from a single pairing are
   untested on Apple hardware; see the PR's Mac checklist and docs/DEVICE_TESTS.md.
+- October 23: merged `main` (rounds 27–29) into the branch; only this file conflicted. On the merged tree,
+  `swift test` on Linux → 116 tests, 0 failures, run on a scratch copy where `MensurTests/ExportTests.swift`
+  also imports `FoundationXML` (Linux keeps `XMLParser` there; not committed, the Mac doesn't need it).
+  `check_structure.py`: project check PASS (39 Swift files); the optional tree-sitter parse flags
+  `Mensur/Core/HealthCheck.swift:39`, the same on `main` alone (a parser limit on valid Swift, not this change).
 
 ## Handoff to a second Mac (October 20, 2026)
 
@@ -541,7 +603,7 @@ Round 13 — Gaussian splat feasibility (same day):
 | Simulator smoke test | PASS (sample only) | iPhone 18 Pro and iPhone 17 sims, iOS 27.0: sample, plan/3D, edit, save, relaunch, PDF/DXF/OBJ export, UI fixes |
 | Signed iPhone install | PASS | iPhone 16 Pro Max, iOS 27.2, Personal Team; launched after trusting the developer |
 | iPhone ↔ Mac sync | PASS | Paired; scan synced with identical originals |
-| iPhone ↔ several Macs sync | NOT BUILT | Round 27 source only: Core tests pass on Linux; no Xcode build or device test yet |
+| iPhone ↔ several Macs sync | NOT BUILT | Round 30 source only: Core tests pass on Linux; no Xcode build or device test yet |
 | Real room capture | PARTIAL | One large space saved with the original RoomCaptureView build; new capture screen untested |
 | Camera-denial alert lifecycle change | NOT DEVICE-TESTED | Deny, close, enable permission, retry |
 | Window/mirror trials | NOT RUN | Defects, corrections, withheld measurements |

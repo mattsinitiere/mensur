@@ -29,6 +29,15 @@ struct SyncPlan: Equatable {
 
     static let originalFiles = ["Original-RoomPlan.json", "Original-RoomPlan.usdz"]
 
+    // Files that travel with a room: its native scans (a resumed room has Original-RoomPlan-2.json and so on)
+    // and its reference photos, Photos/<uuid>.jpg. Anything else a peer names is ignored.
+    static func isSyncedFile(_ name: String) -> Bool {
+        if originalFiles.contains(name) { return true }
+        if name.hasPrefix("Original-RoomPlan-"), name.hasSuffix(".json"), Int(name.dropFirst(18).dropLast(5)).map({ (2...50).contains($0) }) ?? false { return true }
+        guard name.hasPrefix("Photos/"), name.hasSuffix(".jpg") else { return false }
+        return UUID(uuidString: String(name.dropFirst(7).dropLast(4))) != nil
+    }
+
     // Both devices run this with the same manifests and shared `base` (the versions agreed at the end of
     // the last round between these two devices), so they reach the same decisions. A room changed on both
     // sides since `base` is a conflict: the newer save wins and the older is kept as a separate copy. Ties go

@@ -83,11 +83,24 @@ enum PlanDrawing {
         let ns = string as NSString; let s = ns.size(withAttributes: attributes)
         ns.draw(at: CGPoint(x: point.x - (centered ? s.width / 2 : 0), y: point.y - (centered ? s.height / 2 : 0)), withAttributes: attributes)
     }
-    // `areas` writes each enclosed space's area inside it; `tags` labels surfaces (wall numbers outside
-    // their wall, opening tags such as W1 inside the room) for the PDF schedules.
+    static func markerColor(_ c: MarkerCategory) -> UIColor {
+        switch c {
+        case .electrical: return UIColor(red: 0.71, green: 0.33, blue: 0.04, alpha: 1)
+        case .plumbing: return UIColor(red: 0.11, green: 0.31, blue: 0.85, alpha: 1)
+        case .hvac: return UIColor(red: 0.06, green: 0.46, blue: 0.43, alpha: 1)
+        case .other: return .gray
+        }
+    }
+    static let ceilingTint = UIColor(red: 0.05, green: 0.45, blue: 0.56, alpha: 1)
+
+    // `areas` writes each enclosed space's area (and name and finishes) inside it; `tags` labels surfaces (wall
+    // numbers outside their wall, opening tags such as W1 inside the room) for the PDF schedules.
+    // `dimensionStyle` .walls labels every wall; the others draw dimension strings along the outside faces.
+    // `annotations` draws markers, photo pins, stairs and ceiling features.
     static func draw(_ room: RoomProject, context c: CGContext, projection p: PlanProjection,
                      selected: UUID? = nil, dimensions: Bool = true, furniture: Bool = true, grid: Bool = true,
-                     areas: Bool = false, tags: [UUID: String] = [:]) {
+                     areas: Bool = false, tags: [UUID: String] = [:], dimensionStyle: PlanGeometry.DimensionStyle = .walls,
+                     annotations: Bool = true) {
         c.saveGState(); defer { c.restoreGState() }
         c.clip(to: p.viewport)
         if grid {
@@ -101,21 +114,71 @@ enum PlanDrawing {
             c.setStrokeColor(color.cgColor); c.setLineWidth(width); c.setLineDash(phase: 0, lengths: dash)
             c.move(to: a); c.addLine(to: b); c.strokePath(); c.setLineDash(phase: 0, lengths: [])
         }
+        func path(_ pts: [PlanPoint]) { guard let f = pts.first else { return }; c.move(to: p.screen(f)); pts.dropFirst().forEach { c.addLine(to: p.screen($0)) }; c.closePath() }
         let boundary = Geometry.boundary(room.walls)
         let summary = RoomSummary(room), spaces = summary.spaces
-        for space in spaces {
-            guard let first = space.points.first else { continue }
-            c.move(to: p.screen(first)); for point in space.points.dropFirst() { c.addLine(to: p.screen(point)) }; c.closePath()
-            c.setFillColor(floor.cgColor); c.fillPath()
+        let pointsPerMeter = p.scale * p.zoom
+        for space in spaces { path(space.points); c.setFillColor(floor.cgColor); c.fillPath() }
+        if annotations {
+            for f in room.ceilings ?? [] {
+                path(f.corners)
+                let tint = f.id == selected ? UIColor.systemOrange : ceilingTint
+                c.setFillColor(tint.withAlphaComponent(f.id == selected ? 0.12 : 0.05).cgColor); c.fillPath()
+                path(f.corners); c.setStrokeColor(tint.cgColor); c.setLineWidth(1); c.setLineDash(phase: 0, lengths: [6, 4]); c.strokePath(); c.setLineDash(phase: 0, lengths: [])
+                if f.kind == .slope, let high = f.high, high != f.low {
+                    // An arrow up the slope.
+                    let from = p.screen(f.a + f.direction * (f.length * 0.2)), to = p.screen(f.b - f.direction * (f.length * 0.2))
+                    line(from, to, color: tint, width: 1)
+                    let d = CGPoint(x: to.x - from.x, y: to.y - from.y), len = max(1, hypot(d.x, d.y)), u = CGPoint(x: d.x / len * 7, y: d.y / len * 7)
+                    line(to, CGPoint(x: to.x - u.x - u.y * 0.6, y: to.y - u.y + u.x * 0.6), color: tint, width: 1)
+                    line(to, CGPoint(x: to.x - u.x + u.y * 0.6, y: to.y - u.y - u.x * 0.6), color: tint, width: 1)
+                }
+                let caption = "\(f.label.isEmpty ? f.kind.title : f.label) \(room.units.length(f.low))\(f.high.map { "–" + room.units.length($0) } ?? "")"
+                let at = p.screen((f.a + f.b) * 0.5)
+                if textSize(caption, size: 8).width < max(hypot(p.screen(f.b).x - p.screen(f.a).x, p.screen(f.b).y - p.screen(f.a).y), CGFloat(f.width * pointsPerMeter)) + 20 {
+                    text(caption, at: CGPoint(x: at.x, y: at.y + 9), size: 8, color: tint, centered: true)
+                }
+            }
         }
         if furniture {
             for o in room.objects where !o.excluded {
-                let dir = PlanPoint(x: cos(o.yaw), z: sin(o.yaw)), n = PlanPoint(x: -sin(o.yaw), z: cos(o.yaw))
-                let center = PlanPoint(x: o.center.x, z: o.center.z), dx = dir * (o.size.x / 2), dz = n * (o.size.z / 2)
-                let corners = [center - dx - dz, center + dx - dz, center + dx + dz, center - dx + dz]
-                c.move(to: p.screen(corners[0])); corners.dropFirst().forEach { c.addLine(to: p.screen($0)) }; c.closePath()
-                c.setFillColor(UIColor(red: 0.83, green: 0.87, blue: 0.83, alpha: 0.8).cgColor); c.setStrokeColor(UIColor.systemGray.cgColor); c.setLineWidth(1); c.drawPath(using: .fillStroke)
+                path(o.corners)
+                c.setFillColor(UIColor(red: 0.83, green: 0.87, blue: 0.83, alpha: 0.8).cgColor)
+                c.setStrokeColor((o.id == selected ? UIColor.systemOrange : UIColor.systemGray).cgColor); c.setLineWidth(o.id == selected ? 2 : 1); c.drawPath(using: .fillStroke)
             }
+        }
+        if annotations {
+            for s in room.stairs ?? [] {
+                let sym = PlanGeometry.stairSymbol(s), tint = s.id == selected ? UIColor.systemOrange : ink
+                path(sym.outline); c.setFillColor(UIColor.white.cgColor); c.fillPath()
+                path(sym.outline); c.setStrokeColor(tint.cgColor); c.setLineWidth(s.id == selected ? 2 : 1); c.strokePath()
+                for (a, b) in sym.treads { line(p.screen(a), p.screen(b), color: tint.withAlphaComponent(0.6), width: 0.7) }
+                for (a, b) in sym.arrow { line(p.screen(a), p.screen(b), color: tint, width: 1) }
+                text(sym.label, at: p.screen(sym.labelAt), size: 8, color: tint, centered: true, weight: .bold)
+            }
+        }
+        // Walls: bands of their real thickness with their construction's hatching where one is set; a heavy
+        // line on the scanned face otherwise. Openings then overlay the gaps.
+        let bands = PlanGeometry.wallBands(room), banded = Set(bands.map(\.wall.id))
+        for band in bands {
+            let type = band.wall.wallType ?? .stud, isSelected = band.wall.id == selected
+            let tint = isSelected ? UIColor.systemOrange : color(.wall)
+            for piece in band.pieces {
+                let fill: UIColor
+                switch type {
+                case .stud, .partition: fill = tint
+                case .glass: fill = UIColor.systemBlue.withAlphaComponent(0.18)
+                default: fill = Setting.monochromePlans ? UIColor(white: 0.85, alpha: 1) : UIColor(red: 0.80, green: 0.84, blue: 0.88, alpha: 1)
+                }
+                path(piece); c.setFillColor(fill.cgColor); c.fillPath()
+                // Hatching in screen points so its density stays readable at any zoom.
+                let screen = piece.map { pt -> PlanPoint in let s = p.screen(pt); return PlanPoint(x: Double(s.x), z: Double(s.y)) }
+                for (a, b) in PlanGeometry.hatch(screen, type: type, spacing: 5) {
+                    line(CGPoint(x: a.x, y: a.z), CGPoint(x: b.x, y: b.z), color: tint, width: 0.6)
+                }
+                path(piece); c.setStrokeColor(tint.cgColor); c.setLineWidth(type == .glass ? 1 : 0.8); c.strokePath()
+            }
+            for (a, b) in band.jambs { line(p.screen(a), p.screen(b), color: tint, width: 0.8) }
         }
         // Walls first; semantic openings overlay the cutouts.
         let surfaces = room.activeSurfaces.sorted { ($0.kind == .wall ? 0 : 1) < ($1.kind == .wall ? 0 : 1) }
@@ -125,7 +188,9 @@ enum PlanDrawing {
             let ink = isSelected ? UIColor.systemOrange : color(s.kind)
             if isSelected { line(a, b, color: ink.withAlphaComponent(0.25), width: 14) }
             if s.kind == .wall {
-                for (start, end) in DXFExporter.visibleWallSegments(s, room: room) { line(p.screen(start), p.screen(end), color: ink, width: 4) }
+                if !banded.contains(s.id) {
+                    for (start, end) in DXFExporter.visibleWallSegments(s, room: room) { line(p.screen(start), p.screen(end), color: ink, width: 4) }
+                }
             } else if s.kind == .window || s.kind == .mirror {
                 let delta = CGPoint(x: b.x - a.x, y: b.y - a.y), length = max(1, hypot(delta.x, delta.y))
                 let n = CGPoint(x: -delta.y / length * 2.5, y: delta.x / length * 2.5)
@@ -137,8 +202,22 @@ enum PlanDrawing {
                     let t = CGFloat(d / s.length), m = CGPoint(x: a.x + delta.x * t, y: a.y + delta.y * t)
                     line(CGPoint(x: m.x + n.x * 1.8, y: m.y + n.y * 1.8), CGPoint(x: m.x - n.x * 1.8, y: m.y - n.y * 1.8), color: ink, width: 1.5)
                 }
+            } else if s.kind == .door {
+                // The door's leaf and swing (or sliding panels), with a light line across the opening.
+                line(a, b, color: ink.withAlphaComponent(0.35), width: 1, dash: [3, 3])
+                let symbol = PlanGeometry.doorSymbol(s, room: room)
+                for (from, to) in symbol.solid { line(p.screen(from), p.screen(to), color: ink, width: 1.5) }
+                for (from, to) in symbol.dashed { line(p.screen(from), p.screen(to), color: ink, width: 1, dash: [3, 3]) }
+                for arc in symbol.arcs {
+                    let center = p.screen(arc.center), r = CGFloat(arc.radius * pointsPerMeter)
+                    let start = atan2(p.direction(PlanPoint(x: cos(arc.start), z: sin(arc.start))).y, p.direction(PlanPoint(x: cos(arc.start), z: sin(arc.start))).x)
+                    let sweep = arc.end - arc.start
+                    c.setStrokeColor(ink.withAlphaComponent(0.7).cgColor); c.setLineWidth(0.8)
+                    c.addArc(center: center, radius: r, startAngle: start, endAngle: start + CGFloat(sweep), clockwise: sweep < 0)
+                    c.strokePath()
+                }
             } else { line(a, b, color: ink, width: 1.5, dash: [4, 3]) }
-            if dimensions && s.kind == .wall {
+            if dimensions && dimensionStyle == .walls && s.kind == .wall {
                 let v = CGPoint(x: b.x - a.x, y: b.y - a.y), len = max(1, hypot(v.x, v.y)), dir = CGPoint(x: v.x / len, y: v.y / len)
                 let inward = Geometry.inwardNormal(s, walls: room.walls, boundary: boundary)
                 let u = p.direction(inward), n = CGPoint(x: u.x * 22, y: u.y * 22)
@@ -171,8 +250,9 @@ enum PlanDrawing {
                 let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
                 let host = s.kind == .wall ? s : room.walls.first { $0.id == s.parentID }
                 let inward = host.map { Geometry.inwardNormal($0, walls: room.walls, boundary: boundary) } ?? .init(x: 0, z: 1)
-                // Wall numbers sit just outside the wall; opening tags sit inside, past the dimension line.
-                let offset: CGFloat = s.kind == .wall ? -13 : 34
+                // Wall numbers sit just outside the wall (past its thickness); opening tags sit inside, past the dimension line.
+                let outside = -13 - CGFloat((host?.drawnThickness ?? 0) * pointsPerMeter)
+                let offset: CGFloat = s.kind == .wall ? outside : 34
                 let at = CGPoint(x: mid.x + p.direction(inward).x * offset, y: mid.y + p.direction(inward).y * offset)
                 let tint = s.kind == .wall ? UIColor.gray : color(s.kind)
                 let size = textSize(tag, size: 8, weight: .semibold)
@@ -182,22 +262,94 @@ enum PlanDrawing {
                 text(tag, at: at, size: 8, color: tint, centered: true, weight: .semibold)
             }
         }
+        if dimensions && dimensionStyle != .walls { drawChains(room, style: dimensionStyle, context: c, projection: p) }
         if areas {
             for (i, space) in spaces.enumerated() {
                 let at = p.screen(Geometry.labelPoint(space.points))
                 let value = room.units.areaLabel(space.area)
                 // A light backing keeps the label readable over furniture. A lone unnamed space shows only
-                // its area; otherwise the name sits above it.
+                // its area; otherwise the name sits above it, and any finish tags below.
                 let named = spaces.count > 1 || room.spaceLabels != nil
-                let width = max(textSize(value, size: 11, weight: .semibold).width, named ? textSize(String(summary.spaceNames[i].prefix(28)), size: 9).width : 0) + 12
-                let backing = CGRect(x: at.x - width / 2, y: at.y - (named ? 17 : 9), width: width, height: named ? 32 : 18)
+                // Finish tags fit the space: one line, two, or left off when it's too narrow (the PDF schedule has them).
+                let xs = space.points.map { p.screen($0).x }, room_ = (xs.max() ?? 0) - (xs.min() ?? 0) - 10
+                var finishes: [String] = []
+                if let line = room.spaceLabel(space).flatMap(SVGExporter.finishLine) {
+                    let parts = line.components(separatedBy: " · ").reduce(into: [String]()) { out, part in
+                        if part.contains(":") || out.isEmpty { out.append(part) } else { out[out.count - 1] += " · " + part }
+                    }
+                    let half = (parts.count + 1) / 2
+                    let options = [[line], [parts.prefix(half).joined(separator: " · "), parts.dropFirst(half).joined(separator: " · ")].filter { !$0.isEmpty }]
+                    finishes = options.first { $0.allSatisfy { textSize($0, size: 7.5).width <= room_ } } ?? []
+                }
+                let width = max(textSize(value, size: 11, weight: .semibold).width, named ? textSize(String(summary.spaceNames[i].prefix(28)), size: 9).width : 0,
+                                finishes.map { textSize($0, size: 7.5).width }.max() ?? 0) + 12
+                let height: CGFloat = (named ? 32 : 18) + CGFloat(finishes.count) * 11
+                let backing = CGRect(x: at.x - width / 2, y: at.y - (named ? 17 : 9), width: width, height: height)
                 c.setFillColor(UIColor.white.withAlphaComponent(0.82).cgColor)
                 c.addPath(UIBezierPath(roundedRect: backing, cornerRadius: 6).cgPath); c.fillPath()
                 if named {
                     text(String(summary.spaceNames[i].prefix(28)), at: CGPoint(x: at.x, y: at.y - 8), size: 9, color: .gray, centered: true)
                     text(value, at: CGPoint(x: at.x, y: at.y + 5), size: 11, color: ink, centered: true, weight: .semibold)
                 } else { text(value, at: at, size: 11, color: ink, centered: true, weight: .semibold) }
+                for (k, line) in finishes.enumerated() { text(line, at: CGPoint(x: at.x, y: at.y + (named ? 18 : 12) + CGFloat(k) * 10), size: 7.5, color: .darkGray, centered: true) }
             }
+        }
+        if annotations {
+            for m in room.markers ?? [] {
+                let at = p.screen(m.position), tint = markerColor(m.kind.category)
+                let r = CGRect(x: at.x - 8, y: at.y - 8, width: 16, height: 16)
+                if m.id == selected { c.setFillColor(UIColor.systemOrange.withAlphaComponent(0.3).cgColor); c.fillEllipse(in: r.insetBy(dx: -5, dy: -5)) }
+                c.setFillColor(UIColor.white.cgColor); c.fillEllipse(in: r)
+                c.setStrokeColor(tint.cgColor); c.setLineWidth(1.2); c.strokeEllipse(in: r)
+                text(m.kind.code, at: at, size: m.kind.code.count > 1 ? 6.5 : 8, color: tint, centered: true, weight: .bold)
+            }
+            for photo in room.photos ?? [] {
+                let at = p.screen(photo.position)
+                let r = CGRect(x: at.x - 9, y: at.y - 9, width: 18, height: 18)
+                if photo.id == selected { c.setFillColor(UIColor.systemOrange.withAlphaComponent(0.3).cgColor); c.fillEllipse(in: r.insetBy(dx: -5, dy: -5)) }
+                c.setFillColor(UIColor.systemIndigo.cgColor); c.fillEllipse(in: r)
+                if let glyph = UIImage(systemName: "camera.fill")?.withTintColor(.white, renderingMode: .alwaysOriginal) {
+                    glyph.draw(in: CGRect(x: at.x - 5.5, y: at.y - 4.5, width: 11, height: 9))
+                }
+                if let tag = tags[photo.id] { text(tag, at: CGPoint(x: at.x + 11, y: at.y - 12), size: 7.5, color: .systemIndigo, weight: .bold) }
+            }
+        }
+    }
+
+    // Dimension strings in screen points: the chained (or running) string 24 pt beyond the outside face, the
+    // overall string 44 pt beyond it.
+    static func drawChains(_ room: RoomProject, style: PlanGeometry.DimensionStyle, context c: CGContext, projection p: PlanProjection) {
+        func line(_ a: CGPoint, _ b: CGPoint) { c.move(to: a); c.addLine(to: b) }
+        c.setStrokeColor(UIColor.gray.cgColor); c.setLineWidth(0.5)
+        for chain in PlanGeometry.chains(room) {
+            let d = p.direction(chain.direction), n = p.direction(chain.normal)
+            let dl = max(1e-6, hypot(d.x, d.y)), nl = max(1e-6, hypot(n.x, n.y))
+            let du = CGPoint(x: d.x / dl, y: d.y / dl), nu = CGPoint(x: n.x / nl, y: n.y / nl)
+            func at(_ t: Double, _ off: CGFloat) -> CGPoint { let s = p.screen(chain.origin + chain.direction * t); return CGPoint(x: s.x + nu.x * off, y: s.y + nu.y * off) }
+            let tick = CGPoint(x: (du.x + nu.x) * 3, y: (du.y + nu.y) * 3)
+            let angle = CGFloat(Geometry.uprightTextAngle(dx: Double(du.x), dy: Double(du.y)))
+            func label(_ s: String, _ pt: CGPoint, room: CGFloat) {
+                guard textSize(s, size: 8.5).width + 4 <= room else { return }
+                c.saveGState(); c.translateBy(x: pt.x + nu.x * 8, y: pt.y + nu.y * 8); c.rotate(by: angle)
+                text(s, at: .zero, size: 8.5, color: .darkGray, centered: true); c.restoreGState()
+            }
+            let first = chain.ticks.first!, last = chain.ticks.last!
+            var tiers: [(CGFloat, [Double])] = [(44, [first, last])]
+            if style != .overall && chain.ticks.count > 2 { tiers.insert((24, chain.ticks), at: 0) }
+            for (off, ticks) in tiers {
+                line(at(first, off), at(last, off))
+                for t in ticks { let q = at(t, off); line(CGPoint(x: q.x - tick.x, y: q.y - tick.y), CGPoint(x: q.x + tick.x, y: q.y + tick.y)) }
+            }
+            c.strokePath()
+            let px = p.scale * p.zoom
+            if style != .overall && chain.ticks.count > 2 {
+                if style == .chained {
+                    for (t0, t1) in zip(chain.ticks, chain.ticks.dropFirst()) { label(room.units.length(t1 - t0), at((t0 + t1) / 2, 24), room: CGFloat((t1 - t0) * px)) }
+                } else {
+                    for t in chain.ticks.dropFirst() { label(room.units.length(t - first), at(t, 24), room: 200) }
+                }
+            }
+            label(room.units.length(last - first), at((first + last) / 2, 44), room: CGFloat((last - first) * px))
         }
     }
 }
@@ -212,12 +364,15 @@ struct InteractivePlan: UIViewRepresentable {
     @Binding var selected: UUID?
     var onTap: ((PlanPoint) -> Void)? = nil
     var onEdit: ((PlanSurface) -> Void)? = nil     // a finished drag; nil makes the plan read-only
+    var onMove: ((UUID, PlanPoint) -> Void)? = nil // a marker, photo, stair, ceiling feature or furniture dragged by an offset
+    var dimensionStyle = PlanGeometry.DimensionStyle.walls
     func makeUIView(context: Context) -> PlanCanvas {
         let view = PlanCanvas(); view.onSelect = { selected = $0; onTap?($1) }; return view
     }
     func updateUIView(_ view: PlanCanvas, context: Context) {
         if !view.isDragging { view.room = room }      // the canvas shows its live preview until the drag ends
-        view.onEdit = onEdit; view.selected = selected; view.dimensions = dimensions; view.furniture = furniture; view.areas = areas; view.insets = insets
+        view.onEdit = onEdit; view.onMove = onMove; view.selected = selected; view.dimensions = dimensions; view.furniture = furniture; view.areas = areas; view.insets = insets
+        view.dimensionStyle = dimensionStyle
         view.onSelect = { selected = $0; onTap?($1) }
         if view.resetKey != resetKey { view.zoom = 1; view.pan = .zero; view.resetKey = resetKey; view.unpin() }
         view.setNeedsDisplay()
@@ -229,9 +384,12 @@ final class PlanCanvas: UIView {
     var selected: UUID?
     var onSelect: ((UUID?, PlanPoint) -> Void)?
     var onEdit: ((PlanSurface) -> Void)?
+    var onMove: ((UUID, PlanPoint) -> Void)?
+    var dimensionStyle = PlanGeometry.DimensionStyle.walls
+    private var moving: (id: UUID, original: RoomProject, start: PlanPoint)?
     private enum Grab { case wallEnd(atA: Bool), wall, openingEnd(atA: Bool), opening }
     private var drag: (grab: Grab, original: RoomProject, surface: PlanSurface, start: PlanPoint, latest: PlanSurface?)?
-    var isDragging: Bool { drag != nil }
+    var isDragging: Bool { drag != nil || moving != nil }
     // The framing at the start of a drag. It holds while dragging, so the plan doesn't refit and slide under the
     // pointer as the room's bounds change, and after the drop until the room changes some other way.
     private var pinned: (fit: PlanProjection, bounds: CGRect, surfaces: [PlanSurface]?)?
@@ -265,12 +423,17 @@ final class PlanCanvas: UIView {
     }
     override func draw(_ rect: CGRect) {
         guard let c = UIGraphicsGetCurrentContext() else { return }
-        PlanDrawing.draw(room, context: c, projection: projection, selected: selected, dimensions: dimensions, furniture: furniture, areas: areas)
+        PlanDrawing.draw(room, context: c, projection: projection, selected: selected, dimensions: dimensions, furniture: furniture, areas: areas,
+                         dimensionStyle: dimensionStyle)
     }
+    // Markers and photo pins first (they're small and sit on walls), then walls and openings, then stairs,
+    // furniture and ceiling features under the tap.
     @objc private func tap(_ recognizer: UITapGestureRecognizer) {
         let p = projection, point = p.world(recognizer.location(in: self))
-        let threshold = 22 / (p.scale * zoom)
-        onSelect?(Geometry.surface(at: point, in: room.activeSurfaces, threshold: threshold, openingBias: 6 / (p.scale * zoom)), point)
+        let threshold = 22 / (p.scale * zoom), pin = 14 / (p.scale * zoom)
+        if let id = room.annotation(at: point, pin: pin), [.marker, .photo].contains(room.itemKind(id)) { onSelect?(id, point); return }
+        if let id = Geometry.surface(at: point, in: room.activeSurfaces, threshold: threshold, openingBias: 6 / (p.scale * zoom)) { onSelect?(id, point); return }
+        onSelect?(furniture ? room.annotation(at: point, pin: pin) : nil, point)
     }
     static let zoomRange = 0.5...20.0
     // Zooms so the plan point under `anchor` stays under it.
@@ -305,6 +468,21 @@ final class PlanCanvas: UIView {
                 pinned = (PlanDrawing.projection(room, in: bounds.inset(by: insets)), bounds, nil)
                 drag = (grab, room, surface, projection.world(start), nil); updateDrag(to: location); return
             }
+            let world = projection.world(start)
+            if onMove != nil, let id = selected, let kind = room.itemKind(id), kind != .surface,
+               room.annotation(at: world, pin: 22 / (projection.scale * zoom)) == id {
+                pinned = (PlanDrawing.projection(room, in: bounds.inset(by: insets)), bounds, nil)
+                moving = (id, room, world); return
+            }
+        case .changed where moving != nil:
+            guard let m = moving else { return }
+            var preview = m.original; preview.move(m.id, by: projection.world(location) - m.start); room = preview; setNeedsDisplay(); return
+        case .ended where moving != nil, .cancelled where moving != nil, .failed where moving != nil:
+            if let m = moving {
+                if recognizer.state == .ended { pinned?.surfaces = room.surfaces; onMove?(m.id, projection.world(location) - m.start) }
+                else { room = m.original; pinned = nil }
+            }
+            moving = nil; setNeedsDisplay(); return
         case .changed where drag != nil: updateDrag(to: location); return
         case .ended where drag != nil, .cancelled where drag != nil, .failed where drag != nil:
             if recognizer.state == .ended, let edited = drag?.latest { pinned?.surfaces = room.surfaces; onEdit?(edited) }

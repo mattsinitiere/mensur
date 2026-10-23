@@ -126,6 +126,7 @@ struct RoomTransfer: Codable {
             // The LiDAR measurements (a few megabytes, no photos) stay with the room for troubleshooting.
             if let measurements { try? FileManager.default.moveItem(at: measurements, to: folder.appendingPathComponent("Measurements", isDirectory: true)) }
             try save(project)
+            adoptScanPhotos(project)
             // Yield once so the saving overlay can render. USD export is local and synchronous.
             await Task.yield()
             do { try room.export(to: folder.appendingPathComponent("Original-RoomPlan.usdz"), exportOptions: .mesh) }
@@ -160,6 +161,17 @@ struct RoomTransfer: Codable {
                                measurements: FileManager.default.fileExists(atPath: measurements.path) ? measurements : nil)
         fresh.id = room.id; fresh.name = room.name; fresh.createdAt = room.createdAt; fresh.units = room.units
         fresh.notes = room.notes; fresh.address = room.address; fresh.spaceLabels = room.spaceLabels
+        // Scans resumed later are merged back in, in the order they were taken.
+        var n = 2
+        while let data = try? Data(contentsOf: folder.appendingPathComponent("Original-RoomPlan-\(n).json")),
+              let pass = try? Self.decoder().decode(CapturedRoom.self, from: data) {
+            let m = folder.appendingPathComponent("Measurements-\(n)", isDirectory: true)
+            fresh = ScanMerge.merge(Self.build(pass, reflective: reflective, measurements: FileManager.default.fileExists(atPath: m.path) ? m : nil), into: fresh).room
+            n += 1
+        }
+        // Everything the user added or set beyond the scanned geometry stays as it is.
+        fresh.job = room.job; fresh.level = room.level; fresh.markers = room.markers; fresh.photos = room.photos
+        fresh.stairs = room.stairs; fresh.ceilings = room.ceilings ?? fresh.ceilings; fresh.scanReport = room.scanReport ?? fresh.scanReport
         return fresh
     }
 
@@ -169,6 +181,7 @@ struct RoomTransfer: Codable {
     static func build(_ room: CapturedRoom, reflective: Bool, measurements: URL?) -> RoomProject {
         var project = RoomAdapter.project(from: room, reflective: reflective)
         project.dropInvalidGeometry()
+        let cornerGap = ScanMetrics.largestCornerGap(project)       // what RoomPlan left open, before tidying
         project.units = Setting.defaultUnits
         // Heights in the project are measured from RoomPlan's floor until the LiDAR floor replaces it.
         let roomFloor = Double(room.walls.map { $0.transform.columns.3.y - $0.dimensions.y / 2 }.min() ?? 0)
@@ -212,6 +225,8 @@ struct RoomTransfer: Codable {
         if squared > 0 {
             project.captureWarnings.append("\(squared) corner(s) were squared automatically: short corner pieces are hidden and the two walls extended to meet. Review → Restore original corners and stubs undoes this. The original RoomPlan files are unchanged.")
         }
+        if let measurements { applyExtras(&project, from: measurements, floorY: floorY, cornerGap: cornerGap) }
+        else if let cornerGap { project.scanReport = ScanReport(largestCornerGap: cornerGap) }
         return project
     }
     // The floor and ceiling (world y) the LiDAR measured.
@@ -279,7 +294,7 @@ struct RoomTransfer: Codable {
                      left: Double(simd_dot(viewLeft - finalLeft, finalAxis)),
                      bottom: Double((c[1] - size[1] / 2) - (finalCentre.y - window.dimensions.y / 2)))
     }
-    private static func points3D(_ url: URL) -> [SIMD3<Float>]? {
+    static func points3D(_ url: URL) -> [SIMD3<Float>]? {
         guard let data = try? Data(contentsOf: url), data.count >= 12 else { return nil }
         let count = data.count / 12, step = max(1, count / 200_000)
         return data.withUnsafeBytes { raw in
@@ -340,7 +355,7 @@ struct RoomTransfer: Codable {
         let entries = projects.compactMap { room -> SyncEntry? in
             guard let data = try? Self.encoder().encode(room) else { return nil }
             let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-            let originals = SyncPlan.originalFiles.filter { FileManager.default.fileExists(atPath: directory(room.id).appendingPathComponent($0).path) }
+            let originals = syncedFiles(room).filter { FileManager.default.fileExists(atPath: directory(room.id).appendingPathComponent($0).path) }
             return .init(id: room.id, updatedAt: Date(timeIntervalSince1970: floor(room.updatedAt.timeIntervalSince1970)), digest: digest, originals: originals)
         }
         return .init(device: device, entries: entries, tombstones: tombstones)
@@ -348,10 +363,15 @@ struct RoomTransfer: Codable {
     func transfer(_ id: UUID, project: Bool, originals: [String]) -> RoomTransfer? {
         var t = RoomTransfer(id: id)
         if project { guard let room = projects.first(where: { $0.id == id }), let data = try? Self.encoder().encode(room) else { return nil }; t.project = data }
-        for name in originals where SyncPlan.originalFiles.contains(name) {
+        for name in originals where SyncPlan.isSyncedFile(name) {
             t.originals[name] = try? Data(contentsOf: directory(id).appendingPathComponent(name))
         }
         return t
+    }
+    // The room's native scans and photos, whether or not each is on disk yet.
+    func syncedFiles(_ room: RoomProject) -> [String] {
+        let passes = (2...50).map { "Original-RoomPlan-\($0).json" }.prefix { FileManager.default.fileExists(atPath: directory(room.id).appendingPathComponent($0).path) }
+        return SyncPlan.originalFiles + passes + (room.photos ?? []).map(\.file)
     }
     // Writes a peer's room exactly as sent (keeping its timestamp), after the same validation as an import.
     // Native files are only added, never replaced, so originals stay untouched.
@@ -364,9 +384,10 @@ struct RoomTransfer: Codable {
             try write(room)
             tombstones[t.id] = nil; persistTombstones()
         }
-        for (name, data) in t.originals where SyncPlan.originalFiles.contains(name) {
+        for (name, data) in t.originals where SyncPlan.isSyncedFile(name) && data.count < 60_000_000 {
             let url = folder.appendingPathComponent(name)
             guard !FileManager.default.fileExists(atPath: url.path), FileManager.default.fileExists(atPath: folder.path) else { continue }
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: url, options: .atomic)
         }
         received.send(t.id)
@@ -378,8 +399,10 @@ struct RoomTransfer: Codable {
         copy.id = UUID(); copy.name = String((copy.name + " (conflicted copy)").prefix(120))
         let folder = directory(copy.id)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        for name in SyncPlan.originalFiles where FileManager.default.fileExists(atPath: source.appendingPathComponent(name).path) {
-            try FileManager.default.copyItem(at: source.appendingPathComponent(name), to: folder.appendingPathComponent(name))
+        for name in syncedFiles(copy) where FileManager.default.fileExists(atPath: source.appendingPathComponent(name).path) {
+            let target = folder.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: source.appendingPathComponent(name), to: target)
         }
         try write(copy)
     }

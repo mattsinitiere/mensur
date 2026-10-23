@@ -9,10 +9,25 @@ struct ProjectLibrary: View {
     @State private var importing = false
     @State private var deleting: RoomProject?
     @State private var query = ""
+    @State private var touring: RoomProject?          // the tour's sample room, open over the library
+    @AppStorage("libraryGrouping") private var grouping = "none"
     // On the Mac the sidebar handles navigation and search: cards select the room instead of pushing it.
     var onOpen: ((UUID) -> Void)? = nil
-    private var filtered: [RoomProject] {
-        query.isEmpty ? store.projects : store.projects.filter { $0.name.localizedCaseInsensitiveContains(query) || ($0.address ?? "").localizedCaseInsensitiveContains(query) }
+    var onOpenBuilding: ((String) -> Void)? = nil
+    private var filtered: [RoomProject] { store.projects.filter { RoomQuery.matches($0, query) } }
+    // Rooms in sections: by client and project, by building, or all together.
+    private var groups: [(title: String?, rooms: [RoomProject])] {
+        switch grouping {
+        case "project":
+            let named = Dictionary(grouping: filtered) { $0.job?.groupName ?? "" }
+            return named.keys.sorted { ($0.isEmpty ? "~" : $0).localizedStandardCompare($1.isEmpty ? "~" : $1) == .orderedAscending }
+                .map { ($0.isEmpty ? "No project" : $0, named[$0]!) }
+        case "building":
+            let named = Dictionary(grouping: filtered) { $0.level.map { "\($0.building)" } ?? "" }
+            return named.keys.sorted { ($0.isEmpty ? "~" : $0).localizedStandardCompare($1.isEmpty ? "~" : $1) == .orderedAscending }
+                .map { key in (key.isEmpty ? "No building" : key, named[key]!.sorted { ($0.level?.floor ?? 0, $0.name) < ($1.level?.floor ?? 0, $1.name) }) }
+        default: return [(nil, filtered)]
+        }
     }
     var body: some View {
         NavigationStack {
@@ -50,9 +65,28 @@ struct ProjectLibrary: View {
                             }.buttonStyle(.plain)
                         }
                     }.padding(16).background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    let buildings = BuildingPlan.buildings(store.projects)
+                    if !buildings.isEmpty && query.isEmpty {
+                        Text("Buildings").font(.title3.bold())
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(buildings) { building in
+                                    let card = BuildingCard(building: building)
+                                    if let onOpenBuilding { Button { onOpenBuilding(building.name) } label: { card }.buttonStyle(.plain) }
+                                    else { NavigationLink { BuildingView(name: building.name) } label: { card }.buttonStyle(.plain) }
+                                }
+                            }
+                        }
+                    }
                     HStack {
                         Text("Your rooms").font(.title3.bold())
-                        Spacer(); Text("\(store.projects.count)").foregroundStyle(.secondary)
+                        Spacer()
+                        Menu {
+                            Picker("Group", selection: $grouping) {
+                                Text("All rooms").tag("none"); Text("By client and project").tag("project"); Text("By building").tag("building")
+                            }
+                        } label: { Label("Group", systemImage: "rectangle.3.group") }.menuStyle(.button).buttonStyle(.borderless)
+                        Text("\(store.projects.count)").foregroundStyle(.secondary)
                     }
                     if store.projects.isEmpty {
                         ContentUnavailableView {
@@ -63,14 +97,17 @@ struct ProjectLibrary: View {
                     } else if filtered.isEmpty {
                         ContentUnavailableView.search(text: query)
                     }
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 290), spacing: 16, alignment: .top)], spacing: 16) {
-                        ForEach(filtered) { room in
-                            Group {
-                                if let onOpen { Button { onOpen(room.id) } label: { ProjectCard(room: room) } }
-                                else { NavigationLink { RoomDetail(room: room) } label: { ProjectCard(room: room) } }
+                    ForEach(groups, id: \.title) { group in
+                        if let title = group.title { Text(title).font(.headline).foregroundStyle(.secondary).padding(.top, 4) }
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 290), spacing: 16, alignment: .top)], spacing: 16) {
+                            ForEach(group.rooms) { room in
+                                Group {
+                                    if let onOpen { Button { onOpen(room.id) } label: { ProjectCard(room: room) } }
+                                    else { NavigationLink { RoomDetail(room: room) } label: { ProjectCard(room: room) } }
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu { Button("Delete room", role: .destructive) { deleting = room } }
                             }
-                            .buttonStyle(.plain)
-                            .contextMenu { Button("Delete room", role: .destructive) { deleting = room } }
                         }
                     }
                     Text("Mensur · Measured details, clear decisions.").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical)
@@ -84,16 +121,28 @@ struct ProjectLibrary: View {
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
                         Menu {
-                            Button("Import project JSON", systemImage: "square.and.arrow.down") { importing = true }
+                            Button("Import room or project JSON", systemImage: "square.and.arrow.down") { importing = true }
                             Button("Add sample room", systemImage: "rectangle.3.group") { store.addDemo() }
                         } label: { Image(systemName: "ellipsis.circle") }
+                    }
+                }
+                // iPhone and iPad: the tour's sample room opens over the library.
+                .onChange(of: navigation.tour) { _, id in
+                    if onOpen == nil, let id, let room = store.projects.first(where: { $0.id == id }) { touring = room }
+                }
+                .fullScreenCover(item: $touring) { room in
+                    NavigationStack {
+                        RoomDetail(room: room).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { navigation.tour = nil; touring = nil } } }
                     }
                 }
                 .fullScreenCover(isPresented: $scanning) {
                     CaptureScreen { captured, reflective, measurements in Task { await store.addCaptured(captured, reflective: reflective, measurements: measurements) } }
                 }
-                .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
-                    do { try store.importProject(result.get()) } catch { store.errorMessage = error.localizedDescription }
+                .fileImporter(isPresented: $importing, allowedContentTypes: [.mensurRoom, .json]) { result in
+                    do {
+                        let url = try result.get()
+                        if url.pathExtension.lowercased() == "mensur" { try store.importPackage(url) } else { try store.importProject(url) }
+                    } catch { store.errorMessage = error.localizedDescription }
                 }
                 .alert("Mensur", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
                     Button("OK") { store.errorMessage = nil }
@@ -118,7 +167,7 @@ private struct RoomSearch: ViewModifier {
     let enabled: Bool
     @Binding var query: String
     func body(content: Content) -> some View {
-        if enabled { content.searchable(text: $query, prompt: "Find a room or address") } else { content }
+        if enabled { content.searchable(text: $query, prompt: "Find a room, address, client or tag") } else { content }
     }
 }
 
@@ -138,6 +187,10 @@ struct ProjectCard: View {
                     if summary.spaces.count > 1 { Text("· \(summary.spaces.count) spaces") }
                     Text("· \(room.walls.count) walls")
                 }.font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                if let job = room.job, let line = [job.groupName, job.number.isEmpty ? nil : "Job \(job.number)"].compactMap({ $0 }).joined(separator: " · ") as String?, !line.isEmpty {
+                    Label(line, systemImage: "briefcase").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                if let level = room.level { Label("\(level.building) · \(level.displayName)", systemImage: "building.2").font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 // Every card keeps the address line, so cards in a row line up.
                 Label(room.address?.replacingOccurrences(of: "\n", with: ", ") ?? "No address", systemImage: "mappin.and.ellipse")
                     .font(.caption).foregroundStyle(room.address == nil ? .tertiary : .secondary).lineLimit(1)
@@ -163,5 +216,31 @@ struct MensurMark: View {
             context.withCGContext { BrandMark.draw(in: CGRect(origin: .zero, size: canvas), context: $0) }
         }
         .frame(width: size, height: size).accessibilityHidden(true)
+    }
+}
+
+// Search across a room's name, address, job details, tags and building.
+enum RoomQuery {
+    static func matches(_ room: RoomProject, _ query: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return true }
+        let fields = [room.name, room.address ?? "", room.job?.client ?? "", room.job?.project ?? "", room.job?.number ?? "",
+                      room.level?.building ?? "", room.level?.displayName ?? ""] + (room.job?.tags ?? [])
+        return fields.contains { $0.localizedCaseInsensitiveContains(q) }
+    }
+}
+
+struct BuildingCard: View {
+    let building: BuildingPlan.Building
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: "building.2").font(.title2).foregroundStyle(.tint)
+            Text(building.name).font(.headline).lineLimit(1)
+            Text("\(building.floors.count) floor\(building.floors.count == 1 ? "" : "s") · \(building.floors.reduce(0) { $0 + $1.rooms.count }) rooms")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(16).frame(width: 220, alignment: .leading)
+        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 }

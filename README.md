@@ -1,6 +1,6 @@
 # Mensur
 
-**Updated source package: 1.0.1 (build 2), October 20, 2026.** Start with
+**0.1.0 alpha (build 3), October 22, 2026.** Start with
 [START_HERE.md](START_HERE.md) for the Claude Code → Xcode → iPhone walkthrough.
 [CHANGELOG.md](CHANGELOG.md) lists this handoff's changes.
 
@@ -124,6 +124,19 @@ This runs the pure Swift geometry/export tests, then builds both the iOS Simulat
 ```bash
 swift test
 ```
+
+## Install on your Mac and iPhone
+
+Once Xcode is signed in to your Apple Account (see START_HERE.md), plug in and unlock the iPhone, then run:
+
+```bash
+bash scripts/install.sh
+```
+
+It pulls the latest commit, builds and signs with the project's team, replaces /Applications/Mensur.app and
+installs on every connected iPhone. Saved rooms are kept. With a free Personal Team the iPhone copy stops
+opening after 7 days, so run it again to renew it. `--no-pull`, `--mac-only` and `--iphone-only` narrow it,
+and logs go to `build-logs/`.
 
 Core tests belong to the Swift package; the app's Xcode scheme does not embed an XCTest target. To inspect these tests in Xcode, open `Package.swift` separately.
 

@@ -74,3 +74,30 @@ Use separate scans for an ordinary opaque-walled room, a room with large windows
 - Withhold at least some dimensions from the correction process and use those as validation checks.
 
 Do not advertise a fixed accuracy tolerance until these tests have enough representative data. A checkmark on one length is not a survey certification.
+
+## Scan features added October 22, 2026 (not yet run on a device)
+
+The logic behind these is unit-tested; the capture side needs a LiDAR iPhone.
+
+- Coverage heat-map: walls turn from red to yellow to green strip by strip as you walk along them; tapping the
+  mini-plan enlarges it.
+- Spoken coaching and haptics: with both on, the app names the nearest wall still red ("Move closer to the wall
+  on your left") and taps when a wall turns fully green. Check that it doesn't repeat itself more than every
+  20 seconds, and that it stays quiet with Spoken coaching off.
+- Reveal mode (ruler button): stand beside a door frame and aim at its side. The status line should show a
+  reveal within a few seconds. Compare it with a tape across the jamb. After saving, the door's Reveal and the
+  wall's thickness (marked "reveal") should match.
+- Markers (bolt button): aim at an outlet and choose Outlet. After saving, the R marker should sit on the right
+  wall at about the right height, and appear on that wall's elevation in the PDF set.
+- Photos (camera button): take two. After saving, two photo pins should appear where you stood, open from the
+  plan, sync to the Mac, and appear in the PDF set.
+- Ceiling: scan a room with a soffit or beam (or a sloped ceiling) with the camera tilted up at times. Check
+  Elements → Ceiling for a detected feature, and its heights against a tape.
+- Scan report: after a long scan, Review → Scan quality should list path length, any limited tracking and any
+  position corrections.
+- Next room or floor: Finish → Next room on this floor, scan a second room, then Finish → Finish scan. Both
+  rooms should be saved, in one building, and line up in Building view without aligning.
+- Resume: on a saved room, Room options → Continue scanning. Point at walls you scanned before; scanning should
+  start once they're recognised, and new walls should join the room without duplicating the old ones.
+- Send room: Export → Send room to another device, AirDrop to a second device; the room should open there with
+  its photos.

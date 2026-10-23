@@ -6,5 +6,6 @@ DerivedData/
 xcuserdata/
 .build-device/
 .build-signed/
+.build-device-signed/
 build-logs/
 *.xcresult/

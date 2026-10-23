@@ -42,7 +42,15 @@ Xcode build or declare real-world accuracy based on synthetic data.
 - Preserve original RoomPlan JSON/USDZ. Corrected exports are separate files.
 - Project schemaVersion remains 1; a format change needs a migration.
 - No claim of guaranteed accuracy, survey certification, automatic mirror
-  suppression, photorealistic models, or multi-room merging in this release.
+  suppression, or photorealistic models. Rooms scanned in one session (Finish →
+  Next room/floor) or resumed from a saved world map share coordinates; rooms
+  from separate sessions are only placed (by stairs or by hand), never merged.
+- Photos are references pinned to the plan, never used for geometry. Wall
+  thickness is measured only by reveal mode; otherwise it is typed or a
+  wall-type default, and drawings say which.
+- New project fields are optional (schemaVersion stays 1); validate them in
+  RoomProject.validateAnnotations(). New app files must be added to
+  Mensur.xcodeproj by hand (generate_project.py resets signing).
 - Support denied camera permission, unsupported hardware, cancellation, and
   failed processing without losing saved scans. Present permission errors only
   after the controller is visible.

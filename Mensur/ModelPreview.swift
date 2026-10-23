@@ -19,6 +19,7 @@ struct ModelPreview: UIViewRepresentable {
     var room: RoomProject
     var showObjects: Bool
     var resetKey: Int
+    var parts: [MeshPart]? = nil          // a prepared model, such as a whole building's floors stacked
     func makeCoordinator() -> Coordinator { Coordinator() }
     final class Coordinator: NSObject {
         var signature: String = ""; var resetKey = -1
@@ -77,13 +78,15 @@ struct ModelPreview: UIViewRepresentable {
     }
     func updateUIView(_ view: SCNView, context: Context) {
         let signature = String(describing: room.surfaces) + String(describing: room.objects) + "\(showObjects)"
+            + (parts.map { "\($0.count):" + ($0.flatMap(\.vertices).prefix(64).map { "\($0.x),\($0.y),\($0.z)" }.joined()) } ?? "")
         guard context.coordinator.signature != signature || context.coordinator.resetKey != resetKey else { return }
         context.coordinator.signature = signature; context.coordinator.resetKey = resetKey
         let scene = SCNScene()
         // One mesh per wall (its pieces around openings merged) and per other part.
         struct Mesh { var name: String; var material: String; var vertices: [SCNVector3] = []; var normals: [SCNVector3] = []; var indices: [Int32] = [] }
         var meshes: [Mesh] = [], byName: [String: Int] = [:]
-        for part in ModelMesh.parts(room, includeObjects: showObjects) {
+        let allParts = parts ?? ModelMesh.parts(room, includeObjects: showObjects)
+        for part in allParts {
             // Flat-shaded: every face gets its own vertices and a normal pointing out of the part, so walls,
             // frames and furniture show their edges under the lights.
             let points = part.vertices.map { SIMD3<Float>(Float($0.x), Float($0.y), Float($0.z)) }
@@ -129,9 +132,10 @@ struct ModelPreview: UIViewRepresentable {
             light.simdLook(at: simd_normalize(direction), up: SIMD3(0, 1, 0), localFront: SIMD3(0, 0, -1))
             scene.rootNode.addChildNode(light)
         }
-        let bounds = PlanBounds(room.activeSurfaces.flatMap { [$0.a, $0.b] })
-        let span = max(bounds.width, bounds.depth)
-        let target = SCNVector3(Float(bounds.center.x), 0.8, Float(bounds.center.z))
+        let bounds = parts == nil ? PlanBounds(room.activeSurfaces.flatMap { [$0.a, $0.b] }) : PlanBounds(allParts.flatMap { $0.vertices.map { PlanPoint(x: $0.x, z: $0.z) } })
+        let top = parts == nil ? 1.6 : (allParts.flatMap { $0.vertices.map(\.y) }.max() ?? 1.6)
+        let span = max(bounds.width, bounds.depth, top)
+        let target = SCNVector3(Float(bounds.center.x), Float(top / 2), Float(bounds.center.z))
         let camera = SCNNode(); camera.camera = SCNCamera(); camera.camera?.zFar = 1000
         camera.position = SCNVector3(target.x + Float(span * 1.1), Float(span * 1.3 + 2), target.z + Float(span * 1.2))
         camera.look(at: target); scene.rootNode.addChildNode(camera)

@@ -8,6 +8,7 @@ import os
 //                       wallpoints-upright.bin instead, all upright triangles, when ARKit doesn't label them
 //   windowpoints.bin    centres of triangles labelled window, and doorpoints.bin door: openings RoomPlan missed
 //   levels.json         floor and ceiling heights measured from floor- and ceiling-labelled triangles
+//   ceilingpoints.bin   centres of ceiling-labelled triangles (Float32 x, y, z), for soffits, beams and slopes
 //   windows.json        for each window RoomPlan found, up to three straightened greyscale close-ups of it
 //                       (from the most head-on, closest views), for finding the dividers between panes
 //   probe.json          what the scan session offered (depth, mesh), for diagnosis
@@ -108,7 +109,7 @@ final class ScanRecorder {
             if let data = try? JSONEncoder().encode(windowRecords) { try? data.write(to: folder.appendingPathComponent("windows.json")) }
             guard !anchors.isEmpty else { return }
             let labelled = anchors.contains { $0.geometry.classification != nil }
-            var walls = Data(), windows = Data(), doors = Data(), floors: [Float] = [], ceilings: [Float] = []
+            var walls = Data(), windows = Data(), doors = Data(), ceilingPoints = Data(), floors: [Float] = [], ceilings: [Float] = []
             for anchor in anchors {
                 let g = anchor.geometry, vertices = g.vertices, faces = g.faces
                 let bytes = faces.bytesPerIndex, perFace = faces.indexCountPerPrimitive
@@ -136,7 +137,7 @@ final class ScanRecorder {
                         case .window: append(&windows)
                         case .door: append(&doors)
                         case .floor: floors.append(centre.y)
-                        case .ceiling: ceilings.append(centre.y)
+                        case .ceiling: ceilings.append(centre.y); append(&ceilingPoints)
                         default: break
                         }
                     } else {
@@ -148,6 +149,7 @@ final class ScanRecorder {
             try? walls.write(to: folder.appendingPathComponent(labelled ? "wallpoints.bin" : "wallpoints-upright.bin"))
             if !windows.isEmpty { try? windows.write(to: folder.appendingPathComponent("windowpoints.bin")) }
             if !doors.isEmpty { try? doors.write(to: folder.appendingPathComponent("doorpoints.bin")) }
+            if !ceilingPoints.isEmpty { try? ceilingPoints.write(to: folder.appendingPathComponent("ceilingpoints.bin")) }
             func median(_ v: [Float]) -> Float? { v.count < 200 ? nil : v.sorted()[v.count / 2] }
             let levels: [String: Any] = ["floor": median(floors) as Any, "ceiling": median(ceilings) as Any, "floorPoints": floors.count, "ceilingPoints": ceilings.count]
             if let data = try? JSONSerialization.data(withJSONObject: levels.compactMapValues { $0 is NSNull ? nil : $0 }) {

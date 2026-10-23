@@ -1,6 +1,6 @@
 # Mensur — build and test on your iPhone
 
-Source handoff: 1.0.1 (build 2), October 20, 2026.
+Version 0.1.0 alpha (build 3), October 22, 2026.
 
 This ZIP contains a native SwiftUI iOS app, not a website or an installable IPA.
 Claude Code can edit and build the source on your Mac; Xcode signs and installs
@@ -116,6 +116,9 @@ You do not need an App Store submission for this local test. After a successful
 install, you can stop the debugger and launch Mensur from its Home Screen
 icon while its development profile remains valid.
 
+After this first install, `bash scripts/install.sh` does the same from Terminal: it pulls, builds, signs
+and installs on this Mac and the connected phone, keeping your rooms.
+
 ## 5. First test: sample, scan, export
 
 1. Choose **Open sample room**. Confirm Plan, 3D, Elements, and Review load.
@@ -151,7 +154,7 @@ is OBJ. Full acceptance checks are in `docs/DEVICE_TESTS.md`.
 | Scan unavailable | Check that this physical device has LiDAR. Simulator cannot replace this test. |
 | Camera denied | Enable Mensur camera access in Settings, then start a new scan. |
 | Build fails | Give Claude the FIRST compiler error plus the matching build log; do not paste signing credentials. |
-| App stops opening after about a week | Free provisioning may have expired. Rebuild/reinstall with the same team and bundle ID. |
+| App stops opening after about a week | Free provisioning has expired. Plug in the phone and run `bash scripts/install.sh`, or rebuild in Xcode with the same team and bundle ID. |
 | Changes not appearing | Confirm Claude and Xcode use the same folder/worktree and rebuild. |
 
 Back up projects through the app's share sheet or Files > On My iPhone >
