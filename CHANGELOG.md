@@ -1,5 +1,24 @@
 # Changes
 
+## Unreleased
+
+- Sync with several Macs: the iPhone keeps a list of paired Macs and syncs with each one it finds on the Wi-Fi,
+  one round at a time, so a room edited or deleted on one Mac reaches the others through the iPhone. Settings on
+  the iPhone lists the paired Macs with each one's status and last sync, **Pair another Mac**, and **Unpair** per
+  Mac; pairing or unpairing one Mac leaves the others paired. A Mac still pairs with one iPhone.
+- Each pairing keeps its own sync history (`sync-base-<device>.json` and its own last-sync date) instead of one
+  shared `sync-base.json`, so a new pairing no longer wipes the history kept with the other Macs.
+- Deletions now travel on: a room deleted on one device is recorded on each device that hears about it, so a
+  device paired with several others passes the deletion on instead of receiving the room back from another.
+- Updating keeps the existing pairing: on first launch the single saved pairing (Keychain item "pairing", or
+  `pairing.json`) becomes the first entry of the new list (Keychain item "pairings", or `pairings.json`), and
+  `sync-base.json` and the last-sync date become that pairing's. Nobody needs to pair again. The "Mensur sync"
+  Keychain service, the `_mensur._tcp` Bonjour service and the room files are unchanged.
+- A sync round that hears nothing from its Mac for two minutes is abandoned and that connection closed, so one
+  unresponsive Mac can't hold up the others; Sync now reconnects it.
+- `scripts/check_structure.py` matched project paths only in quotes and object IDs only without Xcode's
+  `/* name */` comments, so it failed on the current project; it now accepts Xcode's format.
+
 ## 0.1.0 alpha (build 3) — October 22, 2026
 
 The first tagged release (`v0.1.0-alpha`). Version numbers restart at 0.1.0 to mark Mensur as alpha; the
@@ -35,6 +54,7 @@ The first tagged release (`v0.1.0-alpha`). Version numbers restart at 0.1.0 to m
 - Sharing: Export → Send room to another device makes a .mensur file (project, scans, measurements,
   photos) for AirDrop, Messages or Files; opening one adds the room. Photos sync with paired devices.
 - Welcome pages on first launch and a 30-second guided tour of a sample office (Settings → Help).
+
 
 - Room view: the six measurement cards wrap into two rows of three when the window is narrow, instead of
   squeezing labels like "AREA" to a letter per line. The floor plan redraws when the window is resized,

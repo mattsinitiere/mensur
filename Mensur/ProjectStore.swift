@@ -337,6 +337,13 @@ struct RoomTransfer: Codable {
             tombstones[room.id] = Date()
         }
     }
+    // Deletions learned from a paired device, recorded with that device's date so they reach this device's
+    // other paired devices too (an iPhone paired with several Macs passes one Mac's deletions to the others).
+    func adoptDeletions(_ deletions: [UUID: Date]) {
+        guard !deletions.isEmpty else { return }
+        for (id, date) in deletions { tombstones[id] = max(tombstones[id] ?? date, date) }
+        persistTombstones()
+    }
     private func persistTombstones() {
         try? FileManager.default.createDirectory(at: AppPaths.support, withIntermediateDirectories: true)
         try? Self.encoder().encode(tombstones).write(to: tombstoneFile, options: .atomic)

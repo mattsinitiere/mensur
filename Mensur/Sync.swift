@@ -6,13 +6,15 @@ import os
 import Security
 import SwiftUI
 
-// Wi-Fi sync between the iPhone and the Mac app, with no servers or accounts. The Mac advertises a Bonjour
+// Wi-Fi sync between the iPhone and the Mac app, with no servers or accounts. Each Mac advertises a Bonjour
 // service and the phone connects to it. Every connection is TLS with a pre-shared key: a 6-digit code for
 // the one-time pairing, then a random 256-bit key both devices keep in their Keychains. Rooms only move
-// between paired devices, and only while both apps are open on the same network.
+// between paired devices, and only while both apps are open on the same network. The phone can be paired
+// with several Macs: it keeps one connection to each Mac it finds and runs one sync round at a time, so an
+// edit made on one Mac reaches the others through the phone. A Mac stays with one iPhone.
 @MainActor final class SyncService: ObservableObject {
     enum Role { case host, client }
-    struct Peer: Codable, Equatable { var id: UUID; var name: String; var key: Data }
+    typealias Peer = SyncPeer
     struct Found: Identifiable, Equatable { let id: String; let name: String; let endpoint: NWEndpoint; let pairing: Bool; let device: UUID? }
 
     static let service = "_mensur._tcp"
@@ -21,11 +23,13 @@ import SwiftUI
     #else
     let role = Role.client
     #endif
-    @Published private(set) var peer: Peer?
+    @Published private(set) var peers: [Peer] = []                 // iPhone: its paired Macs; Mac: its iPhone
     @Published private(set) var status = ""
     @Published private(set) var syncing = false
-    @Published private(set) var connected = false
-    @Published private(set) var lastSync: Date?
+    @Published private(set) var connected = false                  // connected to at least one paired device
+    @Published private(set) var connectedPeers: Set<UUID> = []
+    @Published private(set) var syncingPeer: UUID?
+    @Published private(set) var lastSyncs: [UUID: Date] = [:]
     @Published private(set) var pairingCode: String?
     @Published private(set) var found: [Found] = []
     @Published var problem: String?
@@ -55,20 +59,23 @@ import SwiftUI
     let deviceName: String
     private weak var store: ProjectStore?
     private var active = false
+    private var pairings = SyncPairings() { didSet { peers = pairings.peers } }
     private var listener: NWListener?
     private var browser: NWBrowser?
-    private var link: Link?
+    private var links: [UUID: Link] = [:]                           // one per paired device, by its identifier
     private var pairingLink: Link?
     private var pairingFailures = 0
     private var pairingTimer: Timer?
     private var round = Round()
-    private var pendingRound = false
+    private var queue = SyncQueue()                                 // iPhone: Macs waiting for a round
+    private var stallTimer: Timer?
     private var watch: AnyCancellable?
     private var debounce: Timer?
-    private var baseFile: URL { AppPaths.support.appendingPathComponent("sync-base.json") }
+    private func baseFile(_ peer: UUID) -> URL { AppPaths.support.appendingPathComponent(SyncHistory.baseFile(peer)) }
 
-    // State of one sync round: both sides exchange manifests, send what the plan says, then "done".
+    // State of one sync round with one peer: both sides exchange manifests, send what the plan says, then "done".
     private struct Round {
+        var peer: UUID?
         var running = false, sentManifest = false, sentDone = false, peerDone = false
         var plan: SyncPlan?
         var madeCopies = false
@@ -85,15 +92,31 @@ import SwiftUI
         #else
         deviceName = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
         #endif
-        peer = Keychain.load()
-        lastSync = Prefs.string("syncLastDate").flatMap(Double.init).map(Date.init(timeIntervalSince1970:))
+        pairings = Keychain.load()            // also converts the single pairing saved by earlier builds
+        peers = pairings.peers
+        migrateHistory()
+        for peer in pairings.peers {
+            lastSyncs[peer.id] = Prefs.string(SyncHistory.lastSyncKey(peer.id)).flatMap(Double.init).map(Date.init(timeIntervalSince1970:))
+        }
         updateStatus()
+    }
+    // Earlier builds kept one pairing with one merge base (sync-base.json) and one last-sync date. They become
+    // that pairing's own, so updating doesn't make every room look changed on both sides.
+    private func migrateHistory() {
+        let legacy = AppPaths.support.appendingPathComponent(SyncHistory.legacyBase)
+        let legacyDate = Prefs.string(SyncHistory.legacyLastSync)
+        guard FileManager.default.fileExists(atPath: legacy.path) || legacyDate != nil, let owner = SyncHistory.legacyOwner(pairings) else { return }
+        if !FileManager.default.fileExists(atPath: baseFile(owner).path) { try? FileManager.default.moveItem(at: legacy, to: baseFile(owner)) }
+        try? FileManager.default.removeItem(at: legacy)
+        if let legacyDate, Prefs.string(SyncHistory.lastSyncKey(owner)) == nil { Prefs.set(legacyDate, SyncHistory.lastSyncKey(owner)) }
+        Prefs.set(nil, SyncHistory.legacyLastSync)
+        Self.log.notice("moved the sync history to its pairing")
     }
 
     func attach(_ store: ProjectStore) {
         guard self.store == nil else { return }
         self.store = store
-        // Local edits start a round shortly after they settle; the Mac nudges the phone, which drives rounds.
+        // Local edits start a round shortly after they settle; a Mac nudges the phone, which drives rounds.
         watch = store.$localRevision.dropFirst().sink { [weak self] _ in
             guard let self else { return }
             self.debounce?.invalidate()
@@ -111,22 +134,23 @@ import SwiftUI
     }
     private func start() {
         #if DEBUG
-        if peer == nil, let code = testCode, role == .host { pairingCode = code }
-        if peer == nil, testCode != nil, role == .client { browse() }
+        if peers.isEmpty, let code = testCode, role == .host { pairingCode = code }
+        if testCode != nil, role == .client { browse() }
         #endif
-        if role == .host { if peer != nil || pairingCode != nil { listen() } }
-        else if peer != nil { browse() }
+        if role == .host { if !peers.isEmpty || pairingCode != nil { listen() } }
+        else if !peers.isEmpty { browse() }
         updateStatus()
     }
     #if DEBUG
-    // Developer aid for end-to-end tests: launch both apps with MENSUR_TEST_PAIR_CODE=123456 and the
-    // Mac offers that code while the phone pairs with the first Mac offering one.
+    // Developer aid for end-to-end tests: launch the apps with MENSUR_TEST_PAIR_CODE=123456. A Mac with no
+    // iPhone offers that code, and the phone pairs with each Mac offering one that it isn't paired with yet.
     private var testCode: String? { ProcessInfo.processInfo.environment["MENSUR_TEST_PAIR_CODE"] }
     #endif
     private func stop() {
         listener?.cancel(); listener = nil; browser?.cancel(); browser = nil
-        link?.close(); link = nil; pairingLink?.close(); pairingLink = nil
-        connected = false; syncing = false; round = Round(); found = []
+        for link in links.values { link.close() }
+        links = [:]; pairingLink?.close(); pairingLink = nil
+        connectedPeers = []; connected = false; endRound(); queue = SyncQueue(); found = []
         updateStatus()
     }
 
@@ -173,21 +197,34 @@ import SwiftUI
         link.start()
         status = "Pairing with \(mac.name)…"
     }
-    func unpair() {
-        Keychain.delete(); peer = nil
-        try? FileManager.default.removeItem(at: baseFile)
-        Prefs.set(nil, "syncLastDate"); lastSync = nil
-        stop(); if active { start() }
-        // Unpairing happens on the pairing screen, so keep looking for a Mac to pair with.
-        if role == .client { browse() }
+    // Unpairs one device. On the phone the other Macs stay paired and keep their sync history.
+    func unpair(_ id: UUID) {
+        guard pairings.remove(id) != nil else { return }
+        Self.log.notice("unpaired a device")
+        forget(id)
+        Keychain.save(pairings)
+        if role == .host { stop(); if active { start() } }
+        else { browse(); runNext() }   // the pairing screen keeps looking for Macs to pair with
+        updateStatus()
     }
     private func adopt(_ new: Peer) {
         Self.log.notice("pairing: complete, saving pairing")
-        Keychain.save(new); peer = new
-        try? FileManager.default.removeItem(at: baseFile)          // a new pairing starts with no shared history
+        // The phone keeps its other Macs; a Mac stays with one iPhone. A pairing that replaces an earlier one
+        // (another iPhone, or this same device paired again) starts with no shared history.
+        for old in pairings.add(new, keepOthers: role == .client) { forget(old.id) }
+        Keychain.save(pairings)
         pairingCode = nil; pairingTimer?.invalidate()
-        if role == .host { listen() } else { browse() }
+        if role == .host { listen() } else { browse(); connectFound() }
         updateStatus()
+    }
+    // Drops a device's connection, queued round and sync history.
+    private func forget(_ id: UUID) {
+        links[id]?.close(); links[id] = nil
+        connectedPeers.remove(id); connected = !connectedPeers.isEmpty
+        queue.remove(id)
+        if round.peer == id { endRound() }
+        try? FileManager.default.removeItem(at: baseFile(id))
+        Prefs.set(nil, SyncHistory.lastSyncKey(id)); lastSyncs[id] = nil
     }
     static func pairingKey(_ code: String) -> Data { Data(SHA256.hash(data: Data("mensur-pairing-v1:\(code)".utf8))) }
 
@@ -196,7 +233,7 @@ import SwiftUI
     private func listen() {
         listener?.cancel(); listener = nil
         let pairing = pairingCode != nil
-        guard let key = pairing ? pairingCode.map(Self.pairingKey) : peer?.key else { return }
+        guard let key = pairing ? pairingCode.map(Self.pairingKey) : peers.first?.key else { return }
         do {
             let l = try NWListener(using: .mensur(key: key, identity: pairing ? "pair" : "sync"))
             var txt = NWTXTRecord(); txt["name"] = deviceName; txt["id"] = deviceID.uuidString; txt["mode"] = pairing ? "pair" : "sync"
@@ -242,7 +279,9 @@ import SwiftUI
             }
             pairingLink = link; link.start(); return
         }
-        use(link)
+        // The sync listener's key belongs to the Mac's one iPhone, so only that phone completes the handshake.
+        guard let phone = peers.first else { connection.cancel(); return }
+        use(link, for: phone.id)
     }
     private func browse() {
         guard browser == nil else { return }
@@ -270,111 +309,190 @@ import SwiftUI
         }.sorted { $0.name < $1.name }
         Self.log.notice("found \(self.found.count) Mac(s), \(self.found.filter(\.pairing).count) showing a pairing code")
         #if DEBUG
-        if peer == nil, pairingLink == nil, let code = testCode, let mac = found.first(where: \.pairing) { pair(with: mac, code: code) }
+        if pairingLink == nil, let code = testCode,
+           let mac = found.first(where: { mac in mac.pairing && !peers.contains { $0.id == mac.device } }) { pair(with: mac, code: code) }
         #endif
-        if link == nil, let peer, let mac = found.first(where: { !$0.pairing && $0.device == peer.id }) {
-            use(Link(NWConnection(to: mac.endpoint, using: .mensur(key: peer.key, identity: "sync"))))
-        }
+        connectFound()
         updateStatus()
     }
-    // On the Mac a new connection replaces the current one only after its encrypted handshake succeeds, so
-    // a failed or stray attempt can't drop a working sync. The iPhone only connects when it has no link.
-    private func use(_ new: Link) {
-        if role == .client || link == nil { link?.close(); link = new; round = Round() }
+    // Phone: connects to each paired Mac it can see and has no connection with.
+    private func connectFound() {
+        guard role == .client else { return }
+        for peer in peers where links[peer.id] == nil {
+            guard let mac = found.first(where: { !$0.pairing && $0.device == peer.id }) else { continue }
+            use(Link(NWConnection(to: mac.endpoint, using: .mensur(key: peer.key, identity: "sync"))), for: peer.id)
+        }
+    }
+    // On the Mac a new connection replaces the current one only after its encrypted handshake succeeds, so a
+    // failed or stray attempt can't drop a working sync. The iPhone keeps one connection per Mac and only
+    // connects to a Mac it has no connection with.
+    private func use(_ new: Link, for id: UUID) {
+        if role == .client || links[id] == nil { replaceLink(id, with: new) }
         new.onReady = { [weak self] in
             guard let self else { return }
-            if self.link !== new { self.link?.close(); self.link = new; self.round = Round() }
+            if self.links[id] !== new { self.replaceLink(id, with: new) }
             Self.log.notice("sync connection ready")
-            self.connected = true; self.updateStatus()
-            if self.role == .client { self.startRound() }
+            self.connectedPeers.insert(id); self.connected = true; self.updateStatus()
+            if self.role == .client { self.queue.add([id]); self.runNext() }
         }
-        new.onMessage = { [weak self] message in self?.handle(message) }
+        new.onMessage = { [weak self] message in
+            guard let self, self.links[id] === new else { return }
+            self.handle(message, from: id)
+        }
         new.onFailure = { [weak self] error in
             guard let self else { return }
-            guard self.link === new else {
+            guard self.links[id] === new else {
                 Self.log.notice("ignored a connection that failed before it was ready: \(error.map { String(describing: $0) } ?? "closed", privacy: .public)")
                 return
             }
             Self.log.notice("sync connection ended: \(error.map { String(describing: $0) } ?? "closed", privacy: .public)")
-            self.link = nil; self.connected = false; self.syncing = false; self.round = Round()
-            if error != nil, self.role == .client { self.problem = "Lost the connection to your Mac. It reconnects when both apps are open." }
+            self.links[id] = nil; self.connectedPeers.remove(id); self.connected = !self.connectedPeers.isEmpty
+            self.queue.remove(id)
+            if self.round.peer == id { self.endRound(); self.runNext() }
+            if error != nil, self.role == .client {
+                self.problem = "Lost the connection to \(self.pairings.peer(id)?.name ?? "your Mac"). It reconnects when both apps are open."
+            }
             self.updateStatus()
         }
         new.start()
     }
+    private func replaceLink(_ id: UUID, with new: Link) {
+        links[id]?.close(); links[id] = new
+        if round.peer == id { endRound() }
+    }
 
     // MARK: Rounds
 
-    func syncNow() { if role == .client { startRound() } else { link?.send(.init(kind: .changed)) } }
-    private func localChanged() {
-        guard link != nil, connected else { return }
-        if role == .client { startRound() } else { link?.send(.init(kind: .changed)) }
+    func syncNow() {
+        if role == .client { connectFound(); queue.add(peers.map(\.id)); runNext() }
+        else { for (id, link) in links where connectedPeers.contains(id) { link.send(.init(kind: .changed)) } }
     }
-    private func startRound() {
-        guard let link, connected, let store else { return }
-        if round.running { pendingRound = true; return }
-        round = Round(running: true, sentManifest: true); syncing = true; updateStatus()
+    private func localChanged() {
+        if role == .client { queue.add(peers.map(\.id).filter(connectedPeers.contains)); runNext() }
+        else { for (id, link) in links where connectedPeers.contains(id) { link.send(.init(kind: .changed)) } }
+    }
+    // Phone: starts the next queued round unless one is running. Rounds never overlap, so two Macs never
+    // change the library at once.
+    private func runNext() {
+        guard role == .client, !round.running, let store else { return }
+        guard let id = queue.next(connected: connectedPeers), let link = links[id] else { return }
+        beginRound(with: id, link: link, store: store)
+    }
+    private func beginRound(with id: UUID, link: Link, store: ProjectStore) {
+        round = Round(peer: id, running: true, sentManifest: true); syncing = true; syncingPeer = id
+        armStallTimer(); updateStatus()
         link.send(.init(kind: .manifest, manifest: store.manifest(device: deviceID)))
     }
-    private func handle(_ message: Message) {
-        guard let store, let link else { return }
+    private func endRound() {
+        round = Round(); syncing = false; syncingPeer = nil
+        stallTimer?.invalidate(); stallTimer = nil
+    }
+    // Phone: a round that hears nothing from its Mac for two minutes is abandoned and that connection closed,
+    // so the other Macs aren't held up. Sync now, or the Mac reappearing on the network, reconnects it.
+    private func armStallTimer() {
+        stallTimer?.invalidate(); stallTimer = nil
+        guard role == .client else { return }
+        stallTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.roundStalled() }
+        }
+    }
+    private func roundStalled() {
+        guard round.running, let id = round.peer else { return }
+        Self.log.error("sync round stalled, closing that connection")
+        links[id]?.close(); links[id] = nil
+        connectedPeers.remove(id); connected = !connectedPeers.isEmpty
+        endRound(); runNext(); updateStatus()
+    }
+    private func handle(_ message: Message, from id: UUID) {
+        guard let store, let link = links[id] else { return }
+        if round.peer == id { armStallTimer() }
         switch message.kind {
         case .manifest:
-            guard let theirs = message.manifest, theirs.device == peer?.id else { return }
-            if !round.sentManifest {
-                round = Round(running: true, sentManifest: true); syncing = true; updateStatus()
-                link.send(.init(kind: .manifest, manifest: store.manifest(device: deviceID)))
+            guard let theirs = message.manifest, theirs.device == id else { return }
+            if round.peer != id || !round.sentManifest {
+                // The Mac answers the phone's manifest; the phone only gets one in reply to its own.
+                guard role == .host, !round.running else { Self.log.notice("ignored a manifest outside a round"); return }
+                beginRound(with: id, link: link, store: store)
             }
-            let plan = SyncPlan.make(local: store.manifest(device: deviceID), remote: theirs, base: loadBase())
+            let plan = SyncPlan.make(local: store.manifest(device: deviceID), remote: theirs, base: loadBase(id))
             round.plan = plan
             Self.log.notice("sync round: sending \(plan.send.count), expecting \(plan.expect.count), conflicts \(plan.keepConflictCopy.count), deletions \(plan.moveToRecentlyDeleted.count)")
             do {
-                for id in plan.keepConflictCopy { try store.keepConflictCopy(id); round.madeCopies = true }
-                for id in plan.moveToRecentlyDeleted { try store.moveToRecentlyDeleted(id) }
+                for room in plan.keepConflictCopy { try store.keepConflictCopy(room); round.madeCopies = true }
+                for room in plan.moveToRecentlyDeleted { try store.moveToRecentlyDeleted(room) }
             } catch { problem = "Sync couldn’t update a room: \(error.localizedDescription)" }
-            let ids = Set(plan.send).union(plan.sendOriginals.keys)
-            for id in ids.sorted(by: { $0.uuidString < $1.uuidString }) {
-                if let t = store.transfer(id, project: plan.send.contains(id), originals: plan.sendOriginals[id] ?? []) { link.send(.init(kind: .room, room: t)) }
+            // Deletions learned here travel on to this device's other peers.
+            store.adoptDeletions(plan.adoptDeletions)
+            let rooms = Set(plan.send).union(plan.sendOriginals.keys)
+            for room in rooms.sorted(by: { $0.uuidString < $1.uuidString }) {
+                if let t = store.transfer(room, project: plan.send.contains(room), originals: plan.sendOriginals[room] ?? []) { link.send(.init(kind: .room, room: t)) }
             }
             round.sentDone = true; link.send(.init(kind: .done))
             finishIfComplete()
         case .room:
-            guard let t = message.room else { return }
+            guard round.peer == id, let t = message.room else { return }
             do { try store.receive(t); Self.log.notice("received a room (\(t.project == nil ? "original files" : "project", privacy: .public))") }
             catch { Self.log.error("couldn’t save received room: \(error.localizedDescription, privacy: .public)"); problem = "A room from your other device couldn’t be saved: \(error.localizedDescription)" }
         case .done:
+            guard round.peer == id else { return }
             round.peerDone = true; finishIfComplete()
         case .changed:
-            if role == .client { startRound() }
+            if role == .client { queue.add([id]); runNext() }
         case .hello, .welcome: break
         }
     }
     private func finishIfComplete() {
-        guard round.sentDone, round.peerDone, let plan = round.plan else { return }
-        saveBase(plan.base)
+        guard round.sentDone, round.peerDone, let plan = round.plan, let id = round.peer else { return }
+        saveBase(plan.base, for: id)
         Self.log.notice("sync round complete")
-        lastSync = Date(); Prefs.set("\(Date().timeIntervalSince1970)", "syncLastDate")
-        let again = round.madeCopies || pendingRound
-        round = Round(); pendingRound = false; syncing = false; updateStatus()
-        // Conflict copies are new rooms the peer hasn't seen; a follow-up round sends them.
-        if again, role == .client { startRound() } else if again { link?.send(.init(kind: .changed)) }
+        let now = Date()
+        lastSyncs[id] = now; Prefs.set("\(now.timeIntervalSince1970)", SyncHistory.lastSyncKey(id))
+        let madeCopies = round.madeCopies
+        endRound()
+        if role == .client {
+            // Conflict copies are new rooms this Mac hasn't seen; whatever changed here goes on to the other Macs.
+            queue.roundFinished(with: id, plan: plan, madeCopies: madeCopies, connected: peers.map(\.id).filter(connectedPeers.contains))
+            runNext()
+        } else if madeCopies { links[id]?.send(.init(kind: .changed)) }
+        updateStatus()
     }
-    private func loadBase() -> [UUID: Date] {
-        guard let data = try? Data(contentsOf: baseFile) else { return [:] }
+    private func loadBase(_ peer: UUID) -> [UUID: Date] {
+        guard let data = try? Data(contentsOf: baseFile(peer)) else { return [:] }
         return (try? ProjectStore.decoder().decode([UUID: Date].self, from: data)) ?? [:]
     }
-    private func saveBase(_ base: [UUID: Date]) {
+    private func saveBase(_ base: [UUID: Date], for peer: UUID) {
         try? FileManager.default.createDirectory(at: AppPaths.support, withIntermediateDirectories: true)
-        try? ProjectStore.encoder().encode(base).write(to: baseFile, options: .atomic)
+        try? ProjectStore.encoder().encode(base).write(to: baseFile(peer), options: .atomic)
     }
+
+    // MARK: Status
+
     private func updateStatus() {
         let other = role == .host ? "iPhone" : "Mac"
         if pairingCode != nil { status = "Waiting for your iPhone to enter the code"; return }
-        guard let peer else { status = "Not paired"; return }
-        if syncing { status = "Syncing with \(peer.name)…" }
-        else if connected { status = lastSync.map { "Synced with \(peer.name) \($0.formatted(.relative(presentation: .named)))" } ?? "Connected to \(peer.name)" }
-        else if !active { status = "Paired with \(peer.name)" }
-        else { status = "Waiting for \(peer.name) · open Mensur on your \(other) on the same Wi-Fi" }
+        guard !peers.isEmpty else { status = "Not paired"; return }
+        if let id = syncingPeer, let peer = pairings.peer(id) { status = "Syncing with \(peer.name)…"; return }
+        let linked = peers.filter { connectedPeers.contains($0.id) }
+        let last = peers.compactMap { lastSyncs[$0.id] }.max()
+        if peers.count == 1, let peer = peers.first {
+            if !linked.isEmpty { status = lastSyncs[peer.id].map { "Synced with \(peer.name) \($0.formatted(.relative(presentation: .named)))" } ?? "Connected to \(peer.name)" }
+            else if !active { status = "Paired with \(peer.name)" }
+            else { status = "Waiting for \(peer.name) · open Mensur on your \(other) on the same Wi-Fi" }
+            return
+        }
+        if !linked.isEmpty {
+            let names = ListFormatter.localizedString(byJoining: linked.map(\.name))
+            status = "Connected to \(names)" + (last.map { " · synced \($0.formatted(.relative(presentation: .named)))" } ?? "")
+        }
+        else if !active { status = "Paired with \(peers.count) Macs" }
+        else { status = "Waiting for your Macs · open Mensur on a Mac on the same Wi-Fi" }
+    }
+    // One paired device's line in Settings.
+    func statusLine(for peer: Peer) -> String {
+        if syncingPeer == peer.id { return "Syncing…" }
+        let last = lastSyncs[peer.id].map { $0.formatted(.relative(presentation: .named)) }
+        if connectedPeers.contains(peer.id) { return last.map { "Connected · synced \($0)" } ?? "Connected" }
+        return last.map { "Not connected · last synced \($0)" } ?? "Not connected · not synced yet"
     }
 }
 
@@ -477,27 +595,44 @@ extension NWParameters {
     }
 }
 
-// The pairing (peer identity and shared key) lives in this device's Keychain. A Mac build signed without
-// a keychain entitlement can't use it, so there the pairing falls back to a file only this user can read.
+// The pairings (each peer's identity and shared key) live in this device's Keychain, as one list under the
+// "Mensur sync" service. A Mac build signed without a keychain entitlement can't use it, so there they fall
+// back to a file only this user can read. Earlier builds kept a single pairing under the account "pairing"
+// (or in pairing.json); the first launch after the update moves it into the list.
 enum Keychain {
-    private static let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                               kSecAttrService as String: "Mensur sync", kSecAttrAccount as String: "pairing"]
-    private static var fallback: URL { AppPaths.support.appendingPathComponent("pairing.json") }
-    static func save(_ peer: SyncService.Peer) {
-        delete()
-        guard let data = try? JSONEncoder().encode(peer) else { return }
-        var item = query; item[kSecValueData as String] = data; item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        guard AppPaths.testRoot != nil || SecItemAdd(item as CFDictionary, nil) != errSecSuccess else { return }
+    private static let account = "pairings"
+    private static let legacyAccount = "pairing"
+    private static func query(_ account: String) -> [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "Mensur sync", kSecAttrAccount as String: account]
+    }
+    private static func fallback(_ account: String) -> URL { AppPaths.support.appendingPathComponent("\(account).json") }
+
+    static func load() -> SyncPairings {
+        if let data = read(account), let saved = SyncPairings.decode(data) { return saved }
+        guard let data = read(legacyAccount), let old = SyncPairings.decode(data) else { return SyncPairings() }
+        // The old item is removed only once the list is safely saved, so a failed save tries again next launch.
+        if save(old) { remove(legacyAccount); SyncService.log.notice("moved the saved pairing into the list of pairings") }
+        return old
+    }
+    // Saves the whole list, even when empty, so unpairing every device never brings back an old pairing.
+    @discardableResult static func save(_ pairings: SyncPairings) -> Bool {
+        remove(account)
+        let data = pairings.encoded()
+        var item = query(account); item[kSecValueData as String] = data; item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        if AppPaths.testRoot == nil, SecItemAdd(item as CFDictionary, nil) == errSecSuccess { return true }
         try? FileManager.default.createDirectory(at: AppPaths.support, withIntermediateDirectories: true)
-        FileManager.default.createFile(atPath: fallback.path, contents: data, attributes: [.posixPermissions: 0o600])
+        return FileManager.default.createFile(atPath: fallback(account).path, contents: data, attributes: [.posixPermissions: 0o600])
     }
-    static func load() -> SyncService.Peer? {
-        var item = query; item[kSecReturnData as String] = true; item[kSecMatchLimit as String] = kSecMatchLimitOne
+    private static func read(_ account: String) -> Data? {
+        var item = query(account); item[kSecReturnData as String] = true; item[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: AnyObject?
-        let data = AppPaths.testRoot == nil && SecItemCopyMatching(item as CFDictionary, &result) == errSecSuccess ? result as? Data : try? Data(contentsOf: fallback)
-        return data.flatMap { try? JSONDecoder().decode(SyncService.Peer.self, from: $0) }
+        if AppPaths.testRoot == nil, SecItemCopyMatching(item as CFDictionary, &result) == errSecSuccess, let data = result as? Data { return data }
+        return try? Data(contentsOf: fallback(account))
     }
-    static func delete() { if AppPaths.testRoot == nil { SecItemDelete(query as CFDictionary) }; try? FileManager.default.removeItem(at: fallback) }
+    private static func remove(_ account: String) {
+        if AppPaths.testRoot == nil { SecItemDelete(query(account) as CFDictionary) }
+        try? FileManager.default.removeItem(at: fallback(account))
+    }
 }
 
 // MARK: Sync screen
@@ -507,7 +642,8 @@ struct SyncSettings: View {
     @EnvironmentObject private var sync: SyncService
     @State private var code = ""
     @State private var chosen: SyncService.Found?
-    @State private var confirmUnpair = false
+    @State private var unpairing: SyncService.Peer?
+    @State private var addingMac = false
     @State private var showTips = false
     var body: some View {
         Group {
@@ -527,34 +663,73 @@ struct SyncSettings: View {
                 Label(sync.status, systemImage: sync.connected ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath")
                     .foregroundStyle(sync.connected ? Color.green : Color.secondary)
                 if sync.syncing { ProgressView() }
-                if let peer = sync.peer {
-                    LabeledContent(sync.role == .host ? "Paired iPhone" : "Paired Mac", value: peer.name)
-                    if sync.role == .client { Button("Sync now", systemImage: "arrow.triangle.2.circlepath") { sync.syncNow() }.disabled(!sync.connected || sync.syncing) }
-                    if sync.role == .host && sync.pairingCode == nil { Button("Pair a different iPhone", systemImage: "iphone") { sync.beginPairing() } }
-                    Button("Unpair", systemImage: "minus.circle", role: .destructive) { confirmUnpair = true }
+                if sync.role == .host, let phone = sync.peers.first {
+                    LabeledContent("Paired iPhone", value: phone.name)
+                    if sync.pairingCode == nil { Button("Pair a different iPhone", systemImage: "iphone") { sync.beginPairing() } }
+                    Button("Unpair", systemImage: "minus.circle", role: .destructive) { unpairing = phone }
+                }
+                if sync.role == .client && !sync.peers.isEmpty {
+                    Button("Sync now", systemImage: "arrow.triangle.2.circlepath") { sync.syncNow() }.disabled(sync.syncing)
                 }
             } header: { Text(sync.role == .host ? "Sync with iPhone" : "Sync with Mac") } footer: {
-                Text("Rooms sync automatically while Mensur is open on both devices on the same Wi-Fi. Nothing goes through the internet. If a room changes on both, the newest save wins and the other is kept as a “(conflicted copy)”.")
+                Text(sync.role == .host
+                     ? "Rooms sync automatically while Mensur is open on both devices on the same Wi-Fi. Nothing goes through the internet. If a room changes on both, the newest save wins and the other is kept as a “(conflicted copy)”."
+                     : "Rooms sync automatically with each paired Mac while Mensur is open on both, on the same Wi-Fi. Nothing goes through the internet. If a room changes in two places, the newest save wins and the other is kept as a “(conflicted copy)”.")
             }
-            if sync.role == .host { hostPairing } else if sync.peer == nil { clientPairing }
+            if sync.role == .host { hostPairing }
+            else {
+                if !sync.peers.isEmpty { pairedMacs }
+                if sync.peers.isEmpty || addingMac { clientPairing }
+            }
         }
         .alert("Sync", isPresented: Binding(get: { sync.problem != nil }, set: { if !$0 { sync.problem = nil } })) { Button("OK") { sync.problem = nil } } message: { Text(sync.problem ?? "") }
-        .confirmationDialog("Unpair these devices?", isPresented: $confirmUnpair, titleVisibility: .visible) {
-            Button("Unpair", role: .destructive) { sync.unpair() }
-        } message: { Text("Rooms already synced stay on both devices. Pair again any time.") }
+        .confirmationDialog(unpairing.map { "Unpair \($0.name)?" } ?? "Unpair?", isPresented: Binding(get: { unpairing != nil }, set: { if !$0 { unpairing = nil } }),
+                            titleVisibility: .visible, presenting: unpairing) { peer in
+            Button("Unpair", role: .destructive) { sync.unpair(peer.id); unpairing = nil }
+        } message: { peer in
+            if sync.role == .host { Text("Rooms already synced stay on both devices. Pair again any time.") }
+            else { Text("Rooms already synced stay on this \(sync.deviceName) and on \(peer.name).\(sync.peers.count > 1 ? " Your other Macs stay paired." : "") Pair again any time.") }
+        }
+        .onChange(of: sync.peers.map(\.id)) { _, _ in addingMac = false; chosen = nil; code = "" }
         .onAppear { sync.lookForMacs() }
     }
     @ViewBuilder private var hostPairing: some View {
         if let code = sync.pairingCode {
             Section("Pairing code") {
                 Text(code.prefix(3) + " " + code.suffix(3)).font(.system(size: 44, weight: .bold, design: .monospaced)).frame(maxWidth: .infinity)
-                Text("Keep this window open. On your iPhone, open Mensur → Settings, choose this Mac and enter the code. It expires in 3 minutes.")
+                Text("Keep this window open. On your iPhone, open Mensur → Settings (tap Pair another Mac if it already syncs with a Mac), choose this Mac and enter the code. It expires in 3 minutes.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Button("Cancel pairing", role: .cancel) { sync.cancelPairing() }
             }
-        } else if sync.peer == nil {
-            Section { Button("Pair your iPhone", systemImage: "iphone.gen3") { sync.beginPairing() } }
-                footer: { Text("Shows a 6-digit code to enter on your iPhone. Pairing is needed once.") }
+        } else if sync.peers.isEmpty {
+            Section {
+                Button("Pair your iPhone", systemImage: "iphone.gen3") { sync.beginPairing() }
+            } footer: {
+                Text("Shows a 6-digit code to enter on your iPhone. Pairing is needed once. Your iPhone can be paired with several Macs and keeps them all in step.")
+            }
+        }
+    }
+    // Phone: each paired Mac with its own status, and unpairing one at a time.
+    @ViewBuilder private var pairedMacs: some View {
+        Section {
+            ForEach(sync.peers) { mac in
+                let linked = sync.connectedPeers.contains(mac.id)
+                HStack {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(mac.name)
+                            Text(sync.statusLine(for: mac)).font(.caption).foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: linked ? "checkmark.circle.fill" : "desktopcomputer").foregroundStyle(linked ? Color.green : Color.secondary)
+                    }
+                    Spacer()
+                    Button("Unpair", role: .destructive) { unpairing = mac }.buttonStyle(.borderless)
+                }
+            }
+            if !addingMac { Button("Pair another Mac", systemImage: "plus.circle") { addingMac = true; sync.lookForMacs() } }
+        } header: { Text("Paired Macs") } footer: {
+            Text("This \(sync.deviceName) syncs with each paired Mac it finds, one at a time, so a room edited on one Mac reaches the others through it.")
         }
     }
     @ViewBuilder private var clientPairing: some View {
@@ -577,8 +752,9 @@ struct SyncSettings: View {
                     .onChange(of: code) { _, new in code = String(new.filter(\.isNumber).prefix(6)) }
                 Button("Pair with \(mac.name)") { sync.pair(with: mac, code: code) }.disabled(code.count != 6)
             }
-        } header: { Text("Pair with your Mac") } footer: {
-            Text("On your Mac, open Mensur → Settings → Pair your iPhone. Both devices need to be on the same Wi-Fi.")
+            if addingMac { Button("Cancel", role: .cancel) { addingMac = false; chosen = nil; code = "" } }
+        } header: { Text(sync.peers.isEmpty ? "Pair with your Mac" : "Pair another Mac") } footer: {
+            Text("On your Mac, open Mensur → Settings → Pair your iPhone. Both devices need to be on the same Wi-Fi. Macs already paired stay paired.")
         }
     }
 }

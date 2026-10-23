@@ -16,6 +16,7 @@
 		55457C3802F0E1621447A16B /* PlanDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BC3531C96A822A873E306B3 /* PlanDrawing.swift */; };
 		5A1C0D2E9B7F4A6C8E3D1F01 /* Sync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C0D2E9B7F4A6C8E3D1F02 /* Sync.swift */; };
 		5A1C0D2E9B7F4A6C8E3D1F03 /* Core/SyncPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C0D2E9B7F4A6C8E3D1F04 /* Core/SyncPlan.swift */; };
+		5A1C0D2E9B7F4A6C8E3D1F6D /* Core/SyncPeers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C0D2E9B7F4A6C8E3D1F6E /* Core/SyncPeers.swift */; };
 		5A1C0D2E9B7F4A6C8E3D1F05 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C0D2E9B7F4A6C8E3D1F06 /* Settings.swift */; };
 		5A1C0D2E9B7F4A6C8E3D1F07 /* Location.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C0D2E9B7F4A6C8E3D1F08 /* Location.swift */; };
 		5A1C0D2E9B7F4A6C8E3D1F09 /* ScanRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C0D2E9B7F4A6C8E3D1F0A /* ScanRecorder.swift */; };
@@ -59,6 +60,7 @@
 		47E8CEF87E13065448D1DF62 /* ProjectLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectLibrary.swift; sourceTree = "<group>"; };
 		5A1C0D2E9B7F4A6C8E3D1F02 /* Sync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sync.swift; sourceTree = "<group>"; };
 		5A1C0D2E9B7F4A6C8E3D1F04 /* Core/SyncPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/SyncPlan.swift; sourceTree = "<group>"; };
+		5A1C0D2E9B7F4A6C8E3D1F6E /* Core/SyncPeers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/SyncPeers.swift; sourceTree = "<group>"; };
 		5A1C0D2E9B7F4A6C8E3D1F06 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
 		5A1C0D2E9B7F4A6C8E3D1F08 /* Location.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Location.swift; sourceTree = "<group>"; };
 		5A1C0D2E9B7F4A6C8E3D1F0A /* ScanRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanRecorder.swift; sourceTree = "<group>"; };
@@ -135,6 +137,7 @@
 				5A1C0D2E9B7F4A6C8E3D1F08 /* Location.swift */,
 				5A1C0D2E9B7F4A6C8E3D1F06 /* Settings.swift */,
 				5A1C0D2E9B7F4A6C8E3D1F04 /* Core/SyncPlan.swift */,
+				5A1C0D2E9B7F4A6C8E3D1F6E /* Core/SyncPeers.swift */,
 				5A1C0D2E9B7F4A6C8E3D1F02 /* Sync.swift */,
 				C8CFD1B5CF04D89F251A69CF /* RoomDetail.swift */,
 				A7D37B4DFAC90453E47D188F /* MensurApp.swift */,
@@ -257,6 +260,7 @@
 				5A1C0D2E9B7F4A6C8E3D1F07 /* Location.swift in Sources */,
 				5A1C0D2E9B7F4A6C8E3D1F05 /* Settings.swift in Sources */,
 				5A1C0D2E9B7F4A6C8E3D1F03 /* Core/SyncPlan.swift in Sources */,
+				5A1C0D2E9B7F4A6C8E3D1F6D /* Core/SyncPeers.swift in Sources */,
 				5A1C0D2E9B7F4A6C8E3D1F01 /* Sync.swift in Sources */,
 				93BD37B1224B50F70EFF910F /* RoomDetail.swift in Sources */,
 				632A5C825B3353CCE076933C /* MensurApp.swift in Sources */,

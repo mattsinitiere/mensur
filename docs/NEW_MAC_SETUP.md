@@ -98,15 +98,21 @@ Developer Mode.
 
 ## 6. Sync rooms from the iPhone
 
-The iPhone syncs with **one** Mac at a time, so pairing a new Mac unpairs the previous one. You can pair back
-any time, and rooms already synced stay on both.
+The iPhone can be paired with **every** Mac: it syncs with each paired Mac it finds on the Wi-Fi, one at a
+time, so a room edited or deleted on one Mac reaches the others through the iPhone. Pairing a new Mac leaves
+the others paired. Each Mac pairs with one iPhone.
 
 1. On the Mac: Mensur → Settings → **Pair your iPhone**. A 6-digit code appears.
-2. On the iPhone: Mensur → Settings → **Unpair** (from the previous Mac). Then choose this Mac and enter the
-   code.
+2. On the iPhone: Mensur → Settings. If it already syncs with another Mac, tap **Pair another Mac**. Choose
+   this Mac and enter the code.
 3. Allow **Local Network** when either device asks (System Settings → Privacy & Security → Local Network on the
    Mac; Settings → Privacy & Security → Local Network on the iPhone).
-4. Keep Mensur open on both, on the same Wi-Fi. Your rooms copy across.
+4. Keep Mensur open on both, on the same Wi-Fi. Your rooms copy across. iPhone Settings → Paired Macs shows each
+   Mac's status and last sync, and unpairs one Mac at a time.
+
+Rooms reach a Mac only through the iPhone, so an edit made on one Mac shows up on another after the iPhone has
+synced with both (Mensur open on the iPhone and both Macs, or on each Mac in turn). A Mac paired before this
+update stays paired.
 
 ## 7. Claude Code
 

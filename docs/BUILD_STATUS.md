@@ -546,6 +546,46 @@ Round 13 — Gaussian splat feasibility (same day):
   (`build-logs/20261022-144740-install/`): the Mac app and Matthew's Phone both report 0.1.0 (3), signed
   KM25U2VHNT, with the phone's copy signed until 2026-10-29.
 
+## Round 30 — iPhone syncs with several Macs (October 22–23, 2026)
+
+- Matthew works from three Macs (two Mac Studios, an M1 MacBook Pro) and wants the iPhone to sync with all of
+  them. The iPhone now keeps a list of paired Macs, one connection per Mac it finds, and runs one sync round at
+  a time (`SyncQueue`); a round that changes anything on the iPhone queues a round with each other connected
+  Mac, so an edit made on one Mac reaches the others. A Mac still pairs with one iPhone. Details in CHANGELOG
+  Unreleased and docs/ARCHITECTURE.md → Wi-Fi sync.
+- Per-pairing history: `sync-base-<peer id>.json` and `syncLastDate-<peer id>` instead of one `sync-base.json`
+  and `syncLastDate`. Migration on first launch: the Keychain item "pairing" (or `pairing.json`) becomes the
+  list "pairings" (or `pairings.json`); the old item is removed only after the list saved. `sync-base.json` and
+  the last-sync date move to that one pairing. Keychain service "Mensur sync", `_mensur._tcp`, bundle ID and
+  project `schemaVersion` 1 unchanged; the wire format is unchanged.
+- Found while writing the three-device tests: a device that applied a peer's deletion kept no deletion record
+  of its own, so with two Macs the room came straight back from the other Mac (and, in the simulation, rounds
+  never stopped). `SyncPlan.adoptDeletions` now records the peer's deletion, with its date, on the receiving
+  device. Also new: `SyncPlan.expectOriginals` and `changesHere`.
+- New Core file `Mensur/Core/SyncPeers.swift` (`SyncPeer`, `SyncPairings`, `SyncHistory`, `SyncQueue`), added
+  to `Mensur.xcodeproj/project.pbxproj` by hand (IDs 5A1C0D2E9B7F4A6C8E3D1F6D/6E); `scripts/generate_project.py`
+  was not run. New tests: `MensurTests/MultiDeviceSyncTests.swift` (13), including a phone-and-two-Macs
+  simulation that runs real `SyncPlan` rounds with per-pair bases through the queue.
+- Run in a Linux cloud session (no Xcode), with Swift 5.10.1 from Ubuntu's `swiftlang` package:
+  `swift test` → 85 tests, 0 failures (72 before this change, also 0 failures on `main`). With deletion
+  recording removed from the simulation, the deletion test fails (5 assertions, rounds hit the 20-round limit),
+  so the test exercises the fix.
+- `python3 scripts/check_structure.py` → PASS (24 Swift files referenced; Swift syntax parsing of 27 files with
+  tree-sitter-swift 0.7.4). On `main` it failed with "Missing Xcode source: SurfaceEditor.swift": it expected
+  quoted paths and IDs without Xcode's `/* name */` comments. Fixed in the script; it still fails when a source
+  file is missing from the project.
+- `Sync.swift` service code (SyncService, Prefs, Message, Link, Keychain) type-checked on Linux against
+  hand-written stand-ins for Network, Combine, os.Logger, Security and CryptoKit. SwiftUI (SyncSettings, the
+  Settings/Mac sidebar changes) was not type-checked.
+- Not run: any Xcode build (iOS Simulator, iPhone or Mac Catalyst), `bash scripts/verify-on-mac.sh`, the
+  Simulator, or a device. Multi-Mac sync, the Settings screens and the migration from a single pairing are
+  untested on Apple hardware; see the PR's Mac checklist and docs/DEVICE_TESTS.md.
+- October 23: merged `main` (rounds 27–29) into the branch; only this file conflicted. On the merged tree,
+  `swift test` on Linux → 116 tests, 0 failures, run on a scratch copy where `MensurTests/ExportTests.swift`
+  also imports `FoundationXML` (Linux keeps `XMLParser` there; not committed, the Mac doesn't need it).
+  `check_structure.py`: project check PASS (39 Swift files); the optional tree-sitter parse flags
+  `Mensur/Core/HealthCheck.swift:39`, the same on `main` alone (a parser limit on valid Swift, not this change).
+
 ## Handoff to a second Mac (October 20, 2026)
 
 - docs/NEW_MAC_SETUP.md: setting up another Mac from Xcode onwards. a handoff zip
@@ -563,6 +603,7 @@ Round 13 — Gaussian splat feasibility (same day):
 | Simulator smoke test | PASS (sample only) | iPhone 18 Pro and iPhone 17 sims, iOS 27.0: sample, plan/3D, edit, save, relaunch, PDF/DXF/OBJ export, UI fixes |
 | Signed iPhone install | PASS | iPhone 16 Pro Max, iOS 27.2, Personal Team; launched after trusting the developer |
 | iPhone ↔ Mac sync | PASS | Paired; scan synced with identical originals |
+| iPhone ↔ several Macs sync | NOT BUILT | Round 30 source only: Core tests pass on Linux; no Xcode build or device test yet |
 | Real room capture | PARTIAL | One large space saved with the original RoomCaptureView build; new capture screen untested |
 | Camera-denial alert lifecycle change | NOT DEVICE-TESTED | Deny, close, enable permission, retry |
 | Window/mirror trials | NOT RUN | Defects, corrections, withheld measurements |

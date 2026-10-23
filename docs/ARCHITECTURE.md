@@ -36,9 +36,19 @@ All corrected outputs read the same RoomProject. The plan on screen and PDF shar
 
 The generated PDF contains vector drawing commands, a print-scale statement, dimensions, review status, and notes. DXF uses ASCII R12 LINE/TEXT entities and semantic layers, with meter units documented in the file and README. OBJ is Y-up with a companion MTL.
 
+## Wi-Fi sync
+
+Sync is peer to peer on the local network (`Sync.swift`), with no server or account. Each Mac advertises `_mensur._tcp` over Bonjour (TXT `name`, `id`, `mode`); the iPhone browses and connects. Connections are TLS 1.2 with a pre-shared key: a key derived from the 6-digit code while pairing, then a random 256-bit key per pairing, kept in the Keychain under the "Mensur sync" service as one list (account "pairings", or `pairings.json` in Application Support when a Mac build has no keychain entitlement).
+
+The iPhone keeps a list of paired Macs (`SyncPairings`) and one connection per Mac it finds. Rounds run one at a time through `SyncQueue`, whichever Mac they're with, so two Macs never change the library at once and each round plans from a current manifest. A round in which anything changed on the iPhone (rooms or files received, conflict copies, rooms moved to Recently Deleted, deletions learned) queues a round with each other connected Mac; rounds that change nothing on the iPhone queue nothing, so the rounds stop once every device agrees. A Mac stays with one iPhone; pairing another iPhone replaces it.
+
+`SyncPlan.make` is a three-way merge against a base: the versions both devices agreed on at the end of their last round. Each pair of devices has its own base (`sync-base-<peer id>.json`) and last-sync date, so pairing or unpairing one Mac leaves the others' history alone. A room changed on both sides since the base is a conflict: the newer save wins and the other is kept as a "(conflicted copy)". Deletions are tombstones (`deletions.json`, kept 180 days) that win only over versions saved before them. A device records the deletions it learns from a peer (`adoptDeletions`, with the original date), so with three devices a deletion spreads instead of the room returning from the device that hasn't heard yet. Original RoomPlan files are only ever added, never replaced.
+
+Earlier builds kept one pairing (Keychain account "pairing", or `pairing.json`), one `sync-base.json` and one `syncLastDate`. The first launch after the update moves them to the new list and to that pairing's own base and date; the old Keychain item is removed only after the list is saved.
+
 ## Local privacy
 
-No network client exists. Native originals and corrected projects remain in the application's Documents directory until the user shares or deletes them. OS backups may include this directory. The provided privacy manifest declares no tracking or collected data; re-evaluate disclosures and required-reason APIs before any App Store release or adding new dependencies.
+Apart from the Wi-Fi sync above and Apple's address lookup (README), no network client exists. Native originals and corrected projects remain in the application's Documents directory until the user shares or deletes them. OS backups may include this directory. The provided privacy manifest declares no tracking or collected data; re-evaluate disclosures and required-reason APIs before any App Store release or adding new dependencies.
 
 ## Scope
 

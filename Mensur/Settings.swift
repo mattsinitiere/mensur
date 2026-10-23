@@ -157,7 +157,8 @@ struct SettingsView: View {
         }
     }
     private var clearedOnPeer: String {
-        guard sync.peer != nil else { return "" }
-        return "Your paired \(sync.role == .host ? "iPhone" : "Mac") clears its rooms the same way when it next syncs."
+        guard !sync.peers.isEmpty else { return "" }
+        if sync.role == .host { return "Your paired iPhone clears its rooms the same way when it next syncs, and passes that on to any other Macs it syncs with." }
+        return sync.peers.count == 1 ? "Your paired Mac clears its rooms the same way when it next syncs." : "Your paired Macs clear their rooms the same way when they next sync."
     }
 }
