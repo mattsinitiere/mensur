@@ -323,4 +323,18 @@ final class FeatureTests: XCTestCase {
         XCTAssertEqual(buildings[0].floors.map(\.floor), [0, 1])
         XCTAssertFalse(BuildingPlan.parts(buildings[0]).isEmpty)
     }
+
+    func testObjectLabelsWordRoomPlanDetails() {
+        XCTAssertEqual(ObjectLabel.text(category: "chair", attributes: [("ChairType", "swivel"), ("ChairBackType", "existing"), ("ChairLegType", "star"), ("ChairArmType", "existing")]),
+                       "Chair · swivel, with arms, star base")
+        XCTAssertEqual(ObjectLabel.text(category: "chair", attributes: [("ChairType", "dining"), ("ChairBackType", "existing"), ("ChairLegType", "four"), ("ChairArmType", "missing")]),
+                       "Chair · dining, no arms, four legs")
+        XCTAssertEqual(ObjectLabel.text(category: "chair", attributes: [("ChairType", "stool"), ("ChairBackType", "missing"), ("ChairLegType", "unidentified")]), "Chair · stool, backless")
+        XCTAssertEqual(ObjectLabel.text(category: "table", attributes: [("TableShapeType", "circularElliptic"), ("TableType", "dining")]), "Table · dining, round")
+        XCTAssertEqual(ObjectLabel.text(category: "sofa", attributes: [("SofaType", "lShapedExtension")]), "Sofa · L-shaped extension")
+        XCTAssertEqual(ObjectLabel.text(category: "sofa", attributes: [("SofaType", "singleSeat")]), "Sofa · single seat")
+        XCTAssertEqual(ObjectLabel.text(category: "storage", attributes: [("StorageType", "shelf")]), "Storage · shelf")
+        XCTAssertEqual(ObjectLabel.text(category: "chair", attributes: [("ChairType", "unidentified")]), "Chair")
+        XCTAssertEqual(ObjectLabel.text(category: "washerDryer", attributes: []), "Washer dryer")
+    }
 }

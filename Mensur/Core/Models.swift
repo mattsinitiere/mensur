@@ -170,6 +170,45 @@ struct PlanObject: Codable, Identifiable, Hashable {
     var excluded: Bool = false
 }
 
+// A scanned object's name: RoomPlan's category in words plus the details it recognised, e.g.
+// "Chair · swivel, with arms, star base". RoomPlan reports some details only as "existing", "missing", "four"
+// or "star", so each is worded by its attribute type (ChairArmType, ChairLegType…) and put in a fixed order.
+enum ObjectLabel {
+    static func text(category: String, attributes: [(type: String, value: String)]) -> String {
+        let name = words(category)
+        var seen = Set<String>()
+        let details = attributes.enumerated()
+            .compactMap { i, a in detail(type: a.type, value: a.value).map { (order: $0.order, index: i, text: $0.text) } }
+            .sorted { ($0.order, $0.index) < ($1.order, $1.index) }
+            .map(\.text).filter { seen.insert($0).inserted }
+        let label = name.prefix(1).uppercased() + name.dropFirst()
+        return details.isEmpty ? label : "\(label) · \(details.joined(separator: ", "))"
+    }
+
+    static func detail(type: String, value: String) -> (order: Int, text: String)? {
+        if value == "unidentified" || value == "unknown" { return nil }
+        switch (type, value) {
+        case ("ChairArmType", "existing"): return (2, "with arms")
+        case ("ChairArmType", "missing"): return (2, "no arms")
+        case ("ChairBackType", "existing"): return nil                 // a chair back is the usual case
+        case ("ChairBackType", "missing"): return (3, "backless")
+        case ("ChairLegType", "four"): return (4, "four legs")
+        case ("ChairLegType", "star"): return (4, "star base")
+        case ("TableShapeType", "circularElliptic"): return (1, "round")
+        case (_, "lShaped"): return (1, "L-shaped")
+        case (_, "lShapedExtension"): return (1, "L-shaped extension")
+        case ("TableShapeType", _): return (1, words(value))
+        case ("ChairType", _), ("TableType", _), ("SofaType", _), ("StorageType", _): return (0, words(value))
+        default: return (5, words(value))
+        }
+    }
+
+    // "singleSeat" → "single seat".
+    static func words(_ raw: String) -> String {
+        raw.replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression).lowercased()
+    }
+}
+
 struct RoomProject: Codable, Identifiable {
     var schemaVersion: Int = 1
     var id: UUID = UUID()

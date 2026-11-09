@@ -755,19 +755,10 @@ final class MiniPlanView: UIView {
 }
 
 enum RoomAdapter {
-    // "Chair · swivel, with arms" rather than "chair": RoomPlan's category in words plus the details it
-    // recognised (iOS 17 attributes such as chair, table, sofa and storage types).
+    // "Chair · swivel, with arms, star base" rather than "chair" (ObjectLabel words each attribute by its type).
     static func objectLabel(_ o: CapturedRoom.Object) -> String {
-        func words(_ raw: String) -> String {
-            raw.replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression).lowercased()
-        }
-        let name = words(String(describing: o.category))
-        let details = o.attributes.compactMap { attribute -> String? in
-            let text = words(attribute.rawValue)
-            return text == "unidentified" || text == "unknown" ? nil : text
-        }
-        let label = name.prefix(1).uppercased() + name.dropFirst()
-        return details.isEmpty ? label : "\(label) · \(details.joined(separator: ", "))"
+        ObjectLabel.text(category: String(describing: o.category),
+                         attributes: o.attributes.map { (type: String(describing: type(of: $0)), value: $0.rawValue) })
     }
     static func project(from room: CapturedRoom, reflective: Bool) -> RoomProject {
         let floorY = room.walls.map { Double($0.transform.columns.3.y - $0.dimensions.y / 2) }.min() ?? 0

@@ -6,13 +6,15 @@ import Foundation
 //   1. square: walls within 3° of the room's main axes are turned exactly onto them (about their middle);
 //      corners that were joined are rejoined where the new lines cross.
 //   2. close: a wall end that touches nothing is joined to a nearby free end (an L corner) or run onto a
-//      nearby wall (a T junction), when the move is short.
+//      nearby wall (a T junction), when the move is short (up to 40 cm, or 60 cm for an L between two long
+//      walls within 5° of square).
 //   3. merge: two pieces joined end to end, in line (within 2° and 3 cm) and with nothing else at the joint,
 //      become one wall; the second piece's openings move onto it.
 // Every change keeps RoomPlan's version in autoCleanup, so Review → Restore puts it back.
 enum WallJoins {
     struct Report: Equatable { var squared = 0, joined = 0, merged = 0 }
     static let squareWithin = 3 * Double.pi / 180, joint = 0.08
+    static let squareCornerWithin = sin(5 * Double.pi / 180)      // |cos| of the angle between two walls
 
     @discardableResult
     static func apply(_ project: inout RoomProject) -> Report {
@@ -29,15 +31,17 @@ enum WallJoins {
         project.surfaces[i].evidence = .edited; project.surfaces[i].reviewed = false; project.surfaces[i].lidarCheck = nil
     }
 
-    // Openings keep their distance from their wall's start when the wall moves.
+    // Openings keep their place along a wall that moves: measured from the end that stayed put (a wall grown at
+    // one end), or from the middle when both ends moved (a wall turned about its middle).
     static func reattach(_ project: inout RoomProject, before: [UUID: PlanSurface]) {
         for i in project.surfaces.indices where project.surfaces[i].kind != .wall {
             guard let parent = project.surfaces[i].parentID, let old = before[parent],
                   let wall = project.surfaces.first(where: { $0.id == parent }), old.a != wall.a || old.b != wall.b else { continue }
             let s = project.surfaces[i]
-            let ta = (s.a - old.a).dot(old.direction), tb = (s.b - old.a).dot(old.direction)
+            let (from, to) = old.a == wall.a ? (old.a, wall.a) : old.b == wall.b ? (old.b, wall.b) : (old.midpoint, wall.midpoint)
+            let ta = (s.a - from).dot(old.direction), tb = (s.b - from).dot(old.direction)
             record(&project, i)
-            project.surfaces[i].a = wall.a + wall.direction * ta; project.surfaces[i].b = wall.a + wall.direction * tb
+            project.surfaces[i].a = to + wall.direction * ta; project.surfaces[i].b = to + wall.direction * tb
         }
     }
 
@@ -132,12 +136,16 @@ enum WallJoins {
             var best: (cost: Double, x: PlanPoint, other: (Int, Bool)?)?      // other: the free end it joins, for an L
             for j in walls where j != i {
                 let v = project.surfaces[j]
+                // Two long walls within 5° of square can reach further: that's where the LiDAR step hides the short
+                // corner pieces RoomPlan rounds corners with. Each wall still grows less than a door is wide.
+                let square = abs(w.direction.dot(v.direction)) < squareCornerWithin && w.length >= 1.5 && v.length >= 1.5
+                let reach = square ? 0.6 : 0.4
                 guard abs(w.direction.dot(v.direction)) < 0.87,
-                      let x = Geometry.lineIntersection(w.a, w.direction, v.a, v.direction), x.distance(to: e) <= 0.4, keeps(w, atA: atA, to: x) else { continue }
+                      let x = Geometry.lineIntersection(w.a, w.direction, v.a, v.direction), x.distance(to: e) <= reach, keeps(w, atA: atA, to: x) else { continue }
                 // L corner with one of v's free ends.
                 for vAtA in [true, false] where !moved.contains("\(j)\(vAtA)") && free(j, vAtA) {
                     let f = vAtA ? v.a : v.b
-                    guard f.distance(to: e) <= 0.35, x.distance(to: f) <= 0.4, keeps(v, atA: vAtA, to: x) else { continue }
+                    guard f.distance(to: e) <= (square ? 0.85 : 0.35), x.distance(to: f) <= reach, keeps(v, atA: vAtA, to: x) else { continue }
                     let cost = x.distance(to: e) + x.distance(to: f)
                     if cost < (best?.cost ?? .infinity) { best = (cost, x, (j, vAtA)) }
                 }
@@ -149,11 +157,12 @@ enum WallJoins {
                 }
             }
             if let best, best.cost > 0.004 {
-                if atA { project.surfaces[i].a = best.x } else { project.surfaces[i].b = best.x }
+                // Recorded before the move, so Restore puts RoomPlan's ends back.
                 record(&project, i); moved.insert("\(i)\(atA)")
+                if atA { project.surfaces[i].a = best.x } else { project.surfaces[i].b = best.x }
                 if let (j, vAtA) = best.other {
-                    if vAtA { project.surfaces[j].a = best.x } else { project.surfaces[j].b = best.x }
                     record(&project, j); moved.insert("\(j)\(vAtA)")
+                    if vAtA { project.surfaces[j].a = best.x } else { project.surfaces[j].b = best.x }
                 }
                 joined += 1
             }

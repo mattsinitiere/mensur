@@ -1,5 +1,19 @@
 # Changes
 
+## Unreleased
+
+- Fixed: an open corner between two long walls (1.5 m or more) within 5° of square now closes after a scan
+  when each wall needs to grow up to 60 cm and their ends are up to 85 cm apart (was 40 and 35 cm). This is
+  the gap left when the LiDAR hides the short pieces RoomPlan rounds a corner with. On a real office scan the
+  outline stayed open and the area read 383 sq ft; with the corner closed it reads 2,674 sq ft.
+- Fixed: windows and doors stay where they are when a corner is closed by growing their wall at its start;
+  they used to slide along with it. A wall turned about its middle keeps them measured from the middle.
+- Fixed: Review → Restore original corners and stubs now also undoes corner gaps closed after a scan (the
+  original ends were recorded after the move).
+- Furniture details are worded by type: "Chair · swivel, with arms, star base" or "Chair · dining, no arms,
+  four legs" instead of "Chair · swivel, existing, star, existing". Rooms already scanned get the new names
+  from Review → Re-run scan corrections on the iPhone.
+
 ## 0.1.0 alpha (build 3) — October 22, 2026
 
 The first tagged release (`v0.1.0-alpha`). Version numbers restart at 0.1.0 to mark Mensur as alpha; the

@@ -597,6 +597,33 @@ final class GeometryTests: XCTestCase {
         let door = room.surfaces[4]
         XCTAssertEqual(door.a.x, 0.5, accuracy: 1e-6, "the door keeps its place")
     }
+    // The corner of the October 22 office scan: the LiDAR hid RoomPlan's two corner pieces, leaving the long
+    // walls' ends 64 cm apart, 53 and 39 cm short of where they meet at 90°.
+    func testWideGapAtSquareCornerOfLongWallsCloses() {
+        var room = RoomProject.demo()
+        room.surfaces[0].b = .init(x: 4.47, z: 0)
+        room.surfaces[1].a = .init(x: 5, z: 0.39)
+        XCTAssertNil(RoomSummary(room).totalArea, "open, so no area")
+        XCTAssertEqual(WallJoins.apply(&room).joined, 1)
+        XCTAssertEqual(room.surfaces[0].b.distance(to: .init(x: 5, z: 0)), 0, accuracy: 1e-6)
+        XCTAssertEqual(room.surfaces[1].a.distance(to: .init(x: 5, z: 0)), 0, accuracy: 1e-6)
+        XCTAssertEqual(RoomSummary(room).totalArea ?? 0, 20, accuracy: 0.01)
+        let window = room.surfaces.first { $0.kind == .window }!
+        XCTAssertEqual(window.a.z, 1, accuracy: 1e-6, "the window stays where it is when its wall grows at the start")
+        XCTAssertEqual(window.b.z, 2.8, accuracy: 1e-6)
+        Geometry.restoreCleanup(&room)
+        XCTAssertEqual(room.surfaces[0].b.x, 4.47, accuracy: 1e-9, "Restore puts RoomPlan's corner back")
+    }
+    func testWideCornerGapsStayOpenWhenNotSquareShortOrDoorWide() {
+        func gap(_ change: (inout RoomProject) -> Void) -> Int { var room = RoomProject.demo(); change(&room); return WallJoins.apply(&room).joined }
+        XCTAssertEqual(gap { $0.surfaces[0].b = .init(x: 4.2, z: 0); $0.surfaces[1].a = .init(x: 5, z: 0.39) }, 0, "80 cm on one wall could be a doorway")
+        let d = PlanPoint(x: sin(10 * Double.pi / 180), z: cos(10 * Double.pi / 180))
+        XCTAssertEqual(gap { $0.surfaces[0].b = .init(x: 4.47, z: 0); $0.surfaces[1].a = PlanPoint(x: 5, z: 0) + d * 0.39; $0.surfaces[1].b = PlanPoint(x: 5, z: 0) + d * 4 }, 0, "80°, not square")
+        XCTAssertEqual(gap { room in
+            room.surfaces = [PlanSurface(label: "A", kind: .wall, a: .init(x: 3.8, z: 0), b: .init(x: 4.47, z: 0), height: 2.7),
+                             PlanSurface(label: "B", kind: .wall, a: .init(x: 5, z: 0.39), b: .init(x: 5, z: 1.4), height: 2.7)]
+        }, 0, "short walls keep the 40 cm limit")
+    }
     func testSplitWallMergesWithItsOpenings() {
         var room = RoomProject.demo()
         // Split wall 1 (0…5 at z 0) into 0…3 and 3…5; the door is on the first piece; add a window on the second.

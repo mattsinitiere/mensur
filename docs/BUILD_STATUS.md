@@ -546,6 +546,35 @@ Round 13 — Gaussian splat feasibility (same day):
   (`build-logs/20261022-144740-install/`): the Mac app and Matthew's Phone both report 0.1.0 (3), signed
   KM25U2VHNT, with the phone's copy signed until 2026-10-29.
 
+## Round 30 — scan review fixes: square corners, furniture names (October 22, 2026)
+
+- Reviewed a new office scan copied from the phone (`devicectl device copy from`, read only). 22 walls, 12
+  windows, 6 doors; 1.2 s of limited tracking and no ARKit corrections in a 194 m walk. The outline was open at
+  one corner, so the area read 383 sq ft. RoomPlan had rounded that corner with two short pieces (0.47 and
+  0.55 m); the LiDAR step hid them as unconfirmed, leaving the long walls' ends 64 cm apart, 53 and 39 cm short
+  of a 90.2° corner. That was beyond `WallJoins.close` (35 cm between ends, 40 cm per wall).
+- `WallJoins.close`: an L between two walls of 1.5 m or more within 5° of square may reach 60 cm per wall
+  with ends up to 85 cm apart. The rest stay at 40 and 35 cm. 60 cm is under a door width, so a doorway left
+  open along one wall isn't closed.
+- Found by the new tests: `WallJoins.reattach` kept openings at their distance from the wall's start, so
+  growing a wall at its start slid its windows and doors (39 cm in the test). Openings are now measured from
+  the end that didn't move, or from the middle when both moved. `close` also recorded `autoCleanup` after
+  moving the end, so Restore couldn't undo it; it now records first.
+- Object names: `ObjectLabel` in Core words RoomPlan attributes by type (ChairArmType existing → "with arms",
+  ChairLegType star → "star base", ChairBackType missing → "backless", TableShapeType circularElliptic →
+  "round", and so on) in a fixed order. `RoomAdapter.objectLabel` passes `String(describing: type(of:))`.
+- `swift test`: 106 tests (3 new), 0 failures. On a scratch copy of the core with the scan's Project.json, the
+  joins closed the corner (Wall 1 +0.53 m, Wall 29 +0.38 m), the area became 2,673 sq ft, and no health
+  problems remained; the openings on Wall 29 moved under 2 cm.
+- Simulator (iPhone 18 Pro, `MENSUR_TEST_DATA` with a copy of the scan, no world map): Review → Re-run scan
+  corrections rebuilt it from the original RoomPlan JSON and LiDAR files. 2 corner gaps closed (was 1), area
+  2,674 sq ft, perimeter 225′ 4¾″. Labels came out as "Chair · swivel, with arms, star base", "Chair · dining,
+  no arms, four legs", "Table · dining, rectangular". The remaining health findings are short stubs.
+- `bash scripts/install.sh --no-pull` (`build-logs/20261022-184830-install/`): installed on the Mac and
+  Matthew's Phone with no build warnings.
+- Not changed: the room on the phone. Re-running it replaces geometry edits and furniture added by hand. On
+  the Mac, re-run has no LiDAR measurements (they aren't synced), so it should be done on the iPhone.
+
 ## Handoff to a second Mac (October 20, 2026)
 
 - docs/NEW_MAC_SETUP.md: setting up another Mac from Xcode onwards. a handoff zip
